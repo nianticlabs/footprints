@@ -1,8 +1,8 @@
-# [Footprints and Free Space from a Single Color Image]()
+# [Footprints and Free Space from a Single Color Image](https://arxiv.org/abs/2004.06376)
 
-**[Jamie Watson](https://scholar.google.com/citations?view_op=list_works&hl=en&user=5pC7fw8AAAAJ), [Michael Firman](http://www.michaelfirman.co.uk), [Aron Monszpart](http://aron.monszp.art) and [Gabriel J. Brostow](http://www0.cs.ucl.ac.uk/staff/g.brostow/) CVPR 2020 (Oral presentation)**
+**[Jamie Watson](https://scholar.google.com/citations?view_op=list_works&hl=en&user=5pC7fw8AAAAJ), [Michael Firman](http://www.michaelfirman.co.uk), [Aron Monszpart](http://aron.monszp.art) and [Gabriel J. Brostow](http://www0.cs.ucl.ac.uk/staff/g.brostow/) – CVPR 2020 (Oral presentation)**
 
-<!-- [[Link to Paper]()] -->
+[[Link to Paper](https://arxiv.org/abs/2004.06376)]
 
 
 **We introduce *Footprints*, a method for estimating the visible and hidden traversable space from a single RGB image**
@@ -54,7 +54,7 @@ More results on the KITTI dataset:
 
 ## ✏️ 📄 Citation
 
-If you find our work useful or interesting, please consider citing [our paper]():
+If you find our work useful or interesting, please consider citing [our paper](https://arxiv.org/abs/2004.06376):
 
 ```
 @inproceedings{watson-2020-footprints,

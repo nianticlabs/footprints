@@ -1,0 +1,10 @@
+pytest==4.5.0
+pytest-cov==2.7.1
+tensorboardX==1.5
+moviepy==0.2.3.5
+requests==2.22.0
+pyyaml==5.1
+onnx==1.6.0
+flake8==3.7.9
+tqdm==4.41.1
+matplotlib==3.1.2

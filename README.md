@@ -15,7 +15,7 @@
   </tr>
 </table>
 
-Understanding the shape of a scene from a single color image is a formidable computer vision task. 
+Understanding the shape of a scene from a single color image is a formidable computer vision task.
 Most methods aim to predict the geometry of surfaces that are visible to the camera, which is of limited use when planning paths for robots or augmented reality agents. Models which predict beyond the line of sight often parameterize the scene with voxels or meshes, which can be expensive to use in machine learning frameworks.
 
 Our method predicts the hidden ground geometry and extent from a single image:
@@ -38,12 +38,54 @@ Our predictions enable virtual characters to more realistically explore their en
 </table>
 
 
-We learn from stereo video sequences, using camera poses, per-frame depth and semantic segmentation to form training data, which is used to supervise an image-to-image network. 
+
+## ⚙️ Setup
+
+Our code and models were developed with PyTorch 1.3.1.
+The `environment.yml` and `requirements.txt` list our dependencies.
+
+We recommend installing and activating a new conda environment from these files with:
+```
+conda env create -f environment.yml -n footprints
+conda activate footprints
+```
+
+
+## 🖼️ Prediction
+
+We provide three pretrained models:
+
+- `kitti`, a model trained on the KITTI driving dataset with a resolution of 192x640,
+- `matterport`, a model trained on the indoor Matterport dataset with a resolution of 512x640, and
+- `handheld`, a model trained on our own handheld stereo footage with a resolution of 256x448.
+
+We provide code to make predictions for a single image, or a whole folder of images, using any of these pretrained models.
+Models will be [automatically downloaded when required](footprints/utils.py#L35), and input images will be automatically resized to the [correct input resolution](footprints/predict.py#21) for each model.
+
+Single image prediction:
+```
+python -m footprints.predict --image test_data/cyclist.jpg --model kitti
+```
+
+Multi image prediction:
+```
+python -m footprints.predict --image test_data --model handheld
+```
+
+By default, `.npy` predictions and `.jpg` visualisations will be saved to the `predictions` folder; this can be changed with the `--save_dir` flag.
+
+
+*Training code is coming soon*
+
+
+## Method and further results
+
+
+We learn from stereo video sequences, using camera poses, per-frame depth and semantic segmentation to form training data, which is used to supervise an image-to-image network.
 
 <p align="center">
   <img src="readme_ims/figure_3.gif" alt="Video version of figure 3" width="900" />
 </p>
-
 
 
 More results on the KITTI dataset:
@@ -69,7 +111,5 @@ If you find our work useful or interesting, please consider citing [our paper](h
 ```
 
 
-## ⚙️ Code, models, datasets and predictions
-
-Coming soon!
-
+# 👩‍⚖️ License
+Copyright © Niantic, Inc. 2020. Patent Pending. All rights reserved. Please see the license file for terms.

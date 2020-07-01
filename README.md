@@ -77,6 +77,16 @@ By default, `.npy` predictions and `.jpg` visualisations will be saved to the `p
 
 *Training code is coming soon*
 
+## ⏳ Evaluation
+
+*Full evaluation code is coming soon*
+
+For now, we provide the ground truth labels for KITTI [here](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/kitti_ground_truth.zip). 
+For each image, there are 3 `.png` files:
+
+- `XXXXX_ground.png` contains the mask of the boundary of visible and hidden ground, ignoring all objects
+- `XXXXX_objects.png` contains the mask of the ground space taken up by objects (the *footprints*)
+- `XXXXX_combined.png` contains the full evaluation mask - the visible and hidden ground, taking into account object footprints
 
 ## Method and further results
 

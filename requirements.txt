@@ -8,3 +8,4 @@ onnx==1.6.0
 flake8==3.7.9
 tqdm==4.41.1
 matplotlib==3.1.2
+scikit-image==0.17.2

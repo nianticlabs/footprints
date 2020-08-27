@@ -8,12 +8,11 @@
 **We introduce *Footprints*, a method for estimating the visible and hidden traversable space from a single RGB image**
 
 
-<table width="700" align="center">
-  <tr>
-    <td><img src="readme_ims/ours_1.gif" alt="Rig results" width="300" /></td>
-    <td><img src="readme_ims/ours_2.gif" alt="Rig results" width="300" /></td>
-  </tr>
-</table>
+<p align="center">
+  <a href="https://storage.googleapis.com/niantic-lon-static/research/footprints/Main_with_yeti_h264.mp4">
+  <img src="readme_ims/video_title.jpg" alt="5 minute CVPR presentation video link" width="400">
+  </a>
+</p>
 
 Understanding the shape of a scene from a single color image is a formidable computer vision task.
 Most methods aim to predict the geometry of surfaces that are visible to the camera, which is of limited use when planning paths for robots or augmented reality agents. Models which predict beyond the line of sight often parameterize the scene with voxels or meshes, which can be expensive to use in machine learning frameworks.
@@ -97,6 +96,14 @@ We learn from stereo video sequences, using camera poses, per-frame depth and se
   <img src="readme_ims/figure_3.gif" alt="Video version of figure 3" width="900" />
 </p>
 
+Results on mobile phone footage:
+
+<table width="700" align="center">
+  <tr>
+    <td><img src="readme_ims/ours_1.gif" alt="Rig results" width="300" /></td>
+    <td><img src="readme_ims/ours_2.gif" alt="Rig results" width="300" /></td>
+  </tr>
+</table>
 
 More results on the KITTI dataset:
 <p align="center">

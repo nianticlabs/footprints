@@ -44,7 +44,7 @@ Our code and models were developed with PyTorch 1.3.1.
 The `environment.yml` and `requirements.txt` list our dependencies.
 
 We recommend installing and activating a new conda environment from these files with:
-```
+```shell
 conda env create -f environment.yml -n footprints
 conda activate footprints
 ```
@@ -62,12 +62,12 @@ We provide code to make predictions for a single image, or a whole folder of ima
 Models will be [automatically downloaded when required](footprints/utils.py#L35), and input images will be automatically resized to the [correct input resolution](footprints/predict.py#21) for each model.
 
 Single image prediction:
-```
+```shell
 python -m footprints.predict --image test_data/cyclist.jpg --model kitti
 ```
 
 Multi image prediction:
-```
+```shell
 python -m footprints.predict --image test_data --model handheld
 ```
 
@@ -76,19 +76,43 @@ By default, `.npy` predictions and `.jpg` visualisations will be saved to the `p
 
 *Training code is coming soon*
 
+
 ## ⏳ Evaluation
 
-*Full evaluation code is coming soon*
+To evaluate a folder of predictions, run:
+```shell
+python -m footprints.evaluate \
+    --datatype kitti \
+    --metric iou \
+    --predictions path/to/predictions/folder
+```
 
-For now, we provide the ground truth labels for KITTI [here](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/kitti_ground_truth.zip). 
+The following options are provided:
+- `--datatype` can be either `kitti` or `matterport`.
+- `--metric` can be `iou` or `depth`
+
+If necessary, the ground truth files will be automatically downloaded and placed in the `ground_truth_files` folder.
+
+You can also download the KITTI annotations directly from [here](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/kitti_ground_truth.zip).
 For each image, there are 3 `.png` files:
 
 - `XXXXX_ground.png` contains the mask of the boundary of visible and hidden ground, ignoring all objects
 - `XXXXX_objects.png` contains the mask of the ground space taken up by objects (the *footprints*)
 - `XXXXX_combined.png` contains the full evaluation mask - the visible and hidden ground, taking into account object footprints
 
-## Method and further results
+E.g. evaluating on the KITTI test set (assuming images are in a folder named `KITTI_test_rgbs`) could be done by:
+```shell
+python -m footprints.predict \
+ --image KITTI_test_rgbs \
+ --model kitti \
+ --save_dir ./predictions
+python -m footprints.evaluate \
+ --datatype kitti \
+ --metric iou \
+ --predictions ./predictions/outputs
+```
 
+## Method and further results
 
 We learn from stereo video sequences, using camera poses, per-frame depth and semantic segmentation to form training data, which is used to supervise an image-to-image network.
 

@@ -14,8 +14,8 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from torchvision import transforms
 
-from .model_manager import ModelManager
-from .utils import sigmoid_to_depth, download_model_if_doesnt_exist, pil_loader, MODEL_DIR
+from footprints.model_manager import ModelManager
+from footprints.utils import sigmoid_to_depth, download_model_if_doesnt_exist, pil_loader, MODEL_DIR
 
 
 MODEL_HEIGHT_WIDTH = {
@@ -32,8 +32,8 @@ class InferenceManager:
 
         download_model_if_doesnt_exist(model_name)
         model_load_folder = os.path.join(MODEL_DIR, model_name)
-        self.model_manager = ModelManager(is_train=False, use_cuda=use_cuda)
-        self.model_manager.load_model(weights_folder=model_load_folder)
+        self.model_manager = ModelManager(is_inference=True, use_cuda=use_cuda)
+        self.model_manager.load_model(weights_path=model_load_folder)
         self.model_manager.model.eval()
 
         self.use_cuda = use_cuda

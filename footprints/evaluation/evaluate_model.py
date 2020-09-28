@@ -11,7 +11,7 @@ import numpy as np
 from tqdm import tqdm
 from skimage.morphology import convex_hull_image
 
-from .utils import download_ground_truths_if_dont_exist, GROUND_TRUTH_DIR
+from ..utils import download_ground_truths_if_dont_exist, GROUND_TRUTH_DIR
 
 
 # Channels in the .npy prediction arrays
@@ -141,7 +141,7 @@ def evaluate(pred_folder, datatype, metric):
     elif datatype == "matterport":
         download_ground_truths_if_dont_exist("matterport")
         filenames = [xx.split() for xx in readlines(
-            os.path.join(GROUND_TRUTH_DIR, "matterport_filenames.txt"))]
+            os.path.join("splits/matterport/test.txt"))]
 
     all_scores = []
 
@@ -151,14 +151,15 @@ def evaluate(pred_folder, datatype, metric):
             ground_truth, free_space = load_kitti_ground_truth(filename)
             try:
                 pred = np.load(
-                    os.path.join(pred_folder, "{:03d}_color.npy".format(filename)))
+                    os.path.join(pred_folder, "{:03d}.npy".format(filename)))
             except FileNotFoundError:
                 pred = load_mask(
                     os.path.join(pred_folder, "{:d}_ground_mask.png".format(filename)))
 
         elif datatype == "matterport":
             ground_truth, free_space = load_matterport_ground_truth(filename)
-            pred = np.load(os.path.join(pred_folder, "{}_{}_{}_{}.npy".format(*filename)))
+            pred = np.load(os.path.join(pred_folder, "{}".format(filename[0]),
+                                        "{}_{}_{}.npy".format(*filename[1:])))
 
         if metric == "iou":
             if pred.ndim == 3:
@@ -204,10 +205,12 @@ def parse_args():
                         help='path to folder of predictions', required=True)
     parser.add_argument('--datatype', type=str,
                         help='name of datatype to use',
-                        choices=["kitti", "matterport"])
+                        choices=["kitti", "matterport"],
+                        required=True)
     parser.add_argument('--metric', type=str,
                         help='what channel to evaluate',
-                        choices=["iou", "depth"])
+                        choices=["iou", "depth"],
+                        required=True)
     return parser.parse_args()
 
 

@@ -10,22 +10,16 @@ import torch.nn.functional as F
 from torchvision.models import resnet34
 
 
-class FootprintNetwork(nn.Module):
+class Segmentor(nn.Module):
 
-    def __init__(self, pretrained=True):
-        super(FootprintNetwork, self).__init__()
+    def __init__(self, pretrained=True, use_PSP=False):
+        super(Segmentor, self).__init__()
         self.encoder = ResnetEncoder(pretrained=pretrained)
-        self.mask_decoder = SkipDecoder(apply_sigmoid=False)  # for stability when using BCE loss
-        self.depth_decoder = SkipDecoder(apply_sigmoid=True)
+        self.decoder = SkipDecoder(use_PSP=use_PSP)
 
     def forward(self, input_image):
         features = self.encoder(input_image)
-        mask_outputs = self.mask_decoder(features)
-        depth_outputs = self.depth_decoder(features)
-
-        outputs = {}
-        for key in mask_outputs:
-            outputs[key] = torch.cat([mask_outputs[key], depth_outputs[key]], dim=1)
+        outputs = self.decoder(features)
 
         return outputs
 
@@ -61,42 +55,46 @@ class ResnetEncoder(nn.Module):
 
 class SkipDecoder(nn.Module):
 
-    def __init__(self, apply_sigmoid=True):
+    def __init__(self, use_PSP=False):
         super(SkipDecoder, self).__init__()
 
-        num_ch = [512, 256, 128, 64, 64]
+        self.use_PSP = use_PSP
+        inp_channels = 1024 if use_PSP else 512
+        if self.use_PSP:
+            self.PSP = PSP()
 
-        self.block1 = ConvUpsampleAndConcatBlock(in_ch=512, out_ch=256, use_elu=True, use_bn=False)
+        self.block1 = ConvUpsampleAndConcatBlock(in_ch=inp_channels, out_ch=256, use_elu=True, use_bn=False)
         self.block2 = ConvUpsampleAndConcatBlock(in_ch=256, out_ch=128, use_elu=True, use_bn=False)
         self.block3 = ConvUpsampleAndConcatBlock(in_ch=128, out_ch=64, use_elu=True, use_bn=False)
         self.block4 = ConvUpsampleAndConcatBlock(in_ch=64, out_ch=64, use_elu=True, use_bn=False)
 
-        self.outconv1 = OutConvBlock(in_ch=128, out_ch=2, scale=8, apply_sigmoid=apply_sigmoid)
-        self.outconv2 = OutConvBlock(in_ch=64, out_ch=2, scale=4, apply_sigmoid=apply_sigmoid)
-        self.outconv3 = OutConvBlock(in_ch=64, out_ch=2, scale=2, apply_sigmoid=apply_sigmoid)
+        self.outconv1 = OutConvBlock(in_ch=128, out_ch=1)
+        self.outconv2 = OutConvBlock(in_ch=64, out_ch=1)
+        self.outconv3 = OutConvBlock(in_ch=64, out_ch=1)
 
         self.outconv4 = nn.Sequential(ConvBlock(in_ch=64, out_ch=32, use_elu=True, use_bn=False),
-                                      OutConvBlock(in_ch=32, out_ch=2, scale=1,
-                                                   apply_sigmoid=apply_sigmoid))
+                                      OutConvBlock(in_ch=32, out_ch=1))
 
     def forward(self, features):
 
-        outputs = {}
+        outputs = []
         x = features[-1]
+        if self.use_PSP:
+            x = self.PSP(x)
 
         x = self.block1(x, features[-2])
 
         x = self.block2(x, features[-3])
-        outputs['1/8'] = self.outconv1(x)
+        outputs.append(self.outconv1(x))
 
         x = self.block3(x, features[-4])
-        outputs['1/4'] = self.outconv2(x)
+        outputs.append(self.outconv2(x))
 
         x = self.block4(x, features[-5])
-        outputs['1/2'] = self.outconv3(x)
+        outputs.append(self.outconv3(x))
 
         x = F.interpolate(x, scale_factor=2, mode='nearest')
-        outputs['1/1'] = self.outconv4(x)
+        outputs.append(self.outconv4(x))
 
         return outputs
 
@@ -160,24 +158,51 @@ class ConvUpsampleAndConcatBlock(nn.Module):
 
 class OutConvBlock(nn.Module):
 
-    def __init__(self, in_ch, out_ch, scale, apply_sigmoid=True):
+    def __init__(self, in_ch, out_ch):
         super(OutConvBlock, self).__init__()
 
-        self.apply_sigmoid = apply_sigmoid
         self.pad = nn.ReflectionPad2d(1)
-        self.scale = scale
         self.conv1 = nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3)
-
-        if apply_sigmoid:
-            self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.pad(x)
         x = self.conv1(x)
-        if self.apply_sigmoid:
-            x = self.sigmoid(x)
-
-        if self.scale != 1:
-            x = F.interpolate(x, scale_factor=self.scale, mode='bilinear', align_corners=False)
 
         return x
+
+
+class PSPBlock(nn.Module):
+
+    def __init__(self, pool_size, feats, reduce_factor=4):
+        super(PSPBlock, self).__init__()
+
+        self.pooling = nn.AdaptiveAvgPool2d(output_size=(pool_size, pool_size))
+        self.reduce = nn.Conv2d(feats, feats // reduce_factor, kernel_size=1, bias=False)
+
+    def forward(self, x):
+
+        _, _, height, width = x.shape
+
+        x = self.reduce(self.pooling(x))
+        x = F.interpolate(x, size=(height, width), mode='bilinear', align_corners=True)
+        return x
+
+
+class PSP(nn.Module):
+
+    def __init__(self):
+        super(PSP, self).__init__()
+
+        self.block1 = PSPBlock(1, 512)
+        self.block2 = PSPBlock(2, 512)
+        self.block3 = PSPBlock(4, 512)
+        self.block4 = PSPBlock(6, 512)
+
+    def forward(self, x):
+
+        x1 = self.block1(x)
+        x2 = self.block2(x)
+        x4 = self.block3(x)
+        x6 = self.block4(x)
+
+        return torch.cat([x, x6, x4, x2, x1], 1)

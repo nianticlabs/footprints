@@ -5,13 +5,32 @@
 # available in the LICENSE file.
 
 import os
+import yaml
 import hashlib
 import zipfile
 import urllib.request
 from PIL import Image
 
+import cv2
+
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+cv2.setNumThreads(0)
+
+
 MODEL_DIR = "models"
 GROUND_TRUTH_DIR = "ground_truth_files"
+
+
+def pixel_disp_to_depth(disp, focal_length, baseline):
+    """
+    Convert pixel disparty to real world depth
+    """
+    depth = focal_length * baseline / (disp - (disp == 0))
+    depth[depth < 0] = 0
+    return depth
 
 
 def sigmoid_to_depth(disp, min_depth=0.1, max_depth=100):
@@ -21,6 +40,52 @@ def sigmoid_to_depth(disp, min_depth=0.1, max_depth=100):
     scaled_disp = min_disp + (max_disp - min_disp) * disp
     depth = 1 / scaled_disp
     return depth
+
+
+def depth_to_disp(depth):
+    mask = (depth > 0).float()
+    disp = 1 / (depth + 1e-7) * mask
+    return disp
+
+
+def readlines(filename):
+    """ read lines of a text file """
+    with open(filename, 'r') as file_handler:
+        lines = file_handler.read().splitlines()
+    return lines
+
+
+def normalise_image(img):
+    """ Normalize image to [0, 1] range for visualization """
+    # img_max = float(img.max().cpu().data)
+    # img_min = float(img.min().cpu().data)
+
+    img_max = float(img.max())
+    img_min = float(img.min())
+    denom = img_max - img_min if img_max != img_min else 1e5
+    return (img - img_min) / denom
+
+
+def sec_to_hm(secs):
+    """ convert seconds to hours, minutes and seconds """
+    secs = int(secs)
+    seconds = secs % 60
+    secs //= 60
+    minutes = secs % 60
+    hours = secs // 60
+    return hours, minutes, seconds
+
+
+def sec_to_hm_str(secs):
+    """ convert seconds to a string of hours, minutes and seconds """
+    hours, minutes, seconds = sec_to_hm(secs)
+    return "{:02d}h{:02d}m{:02d}s".format(hours, minutes, seconds)
+
+
+def load_config(config):
+    with open(config, 'r') as fh:
+        config = yaml.safe_load(fh)
+    return config
 
 
 def pil_loader(path):
@@ -94,7 +159,8 @@ def download_ground_truths_if_dont_exist(dataset_name):
     os.makedirs(ground_truth_path, exist_ok=True)
 
     # see if we have files already extracted
-    if not (os.path.exists(ground_truth_path) and len(os.listdir(ground_truth_path)) > 500):
+    ground_truth_subdir = os.path.join(ground_truth_path, "{}_ground_truth".format(dataset_name))
+    if not (os.path.exists(ground_truth_subdir) and len(os.listdir(ground_truth_subdir)) > 500):
 
         ground_truths_url, required_md5checksum = download_paths[dataset_name]
 

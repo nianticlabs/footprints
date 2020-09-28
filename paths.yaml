@@ -1,0 +1,13 @@
+kitti:
+  dataset: your/kitti/path
+  training_data: your/downloaded/training_data/path
+
+matterport:
+  dataset: your/matterport/path
+  training_data: your/downloaded/training_data/path
+
+ADE20K:
+  dataset: your/ADE20K/path
+
+cityscapes:
+  dataset: your/cityscapes/path

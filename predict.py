@@ -5,7 +5,40 @@ import cv2
 from footprints.utils import sigmoid_to_depth
 import numpy as np
 from scipy import ndimage
+from matplotlib import colors as clr
 
+
+class Point:
+	def __init__(self, x, y):
+		self.x = x
+		self.y = y
+
+	def getAbsoluteDistance(self, otherPoint):
+		return pow((self.getXFloat() - otherPoint.getXFloat()) ** 2 + (self.getYFloat() - otherPoint.getYFloat()) ** 2,  1 / 2)
+
+	def getClosestPoint(self, otherPoints):
+		closestDist = 10000
+		for i in range(len(otherPoints)):
+			dist = self.getAbsoluteDistance(otherPoints[i])
+			if dist < closestDist:
+				closest = otherPoints[i]
+				closestDist = dist
+		return closest
+
+	def getMidPoint(self, otherPoint):
+		return Point(abs((self.getXFloat() + otherPoint.getXFloat()) / 2), abs((self.getYFloat() + otherPoint.getYFloat()) / 2))
+
+	def getXInt(self):
+		return int(round(self.x))
+
+	def getYInt(self):
+		return int(round(self.y))
+
+	def getXFloat(self):
+		return float(self.x)
+
+	def getYFloat(self):
+		return float(self.y)
 
 class ClusterInfo:
 	def __init__(self, valore, dimensione, isFoot):
@@ -45,28 +78,72 @@ def findNearest(center_of_mass):
 	return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
 
 
-def getAbsoluteDistance(pointA, pointB):  # pointA[0] e' la x, pointB[1] e' la y
-	return pow((pointA[0] - pointB[0]) ** 2 + (pointA[1] - pointB[1]) ** 2, 1 / 2)
+# funzioni per disegnare
+def draw_points(img, points, radius=2, colorPoints=clr.to_rgba('pink')):
+	for i in range(len(points)):
+		x = points[i].getXInt()
+		y = points[i].getYInt()
+		img[x - radius:x + radius, y - radius:y + radius, 0:2] = 1
+	return img
 
 
-def midpoint(pointA, pointB):
-	return [abs((pointA[0] + pointB[0]) / 2), abs((pointA[1] + pointB[1]) / 2)]
+def draw_line(img, pointA, pointB, colorLine=clr.to_rgba('blue')):
+	return cv2.line(img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
+					thickness=1)
 
 
-def onePointEachPerson(clustersInfo, maxDistance):
+def draw_tag(img, point, text, colorText=clr.to_rgba('red')):
+	return cv2.putText(img=img, text=text, org=(point.getYInt(), point.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+					   color=colorText, thickness=1, fontScale=0.6)
+
+
+def draw_line_with_tag(img, pointA, pointB, text, colorLine=clr.to_rgba('blue'), colorText=clr.to_rgba('red')):
+	img = cv2.line(img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
+				   thickness=1)
+	midp = pointA.getMidPoint(pointB)
+	img = cv2.putText(img=img, text=text, org=(midp.getYInt(), midp.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+					  color=colorText, thickness=1, fontScale=0.6)
+	return img
+
+
+def draw_distance(img, points, maxDistance, tag=True):
+	dim = len(points)
+	for i in range(dim):
+		for j in range(i + 1, dim):
+			# dist = getAbsoluteDistance(points[i], points[j]) perche' sono scambiate la x e la y? non esiste motivo logico
+			dist = points[i].getAbsoluteDistance(points[j])
+			if dist <= float(maxDistance):
+				if tag:
+					img = draw_line_with_tag(img, points[i], points[j], str(int(dist)))
+				else:
+					img = draw_line(img, points[i], points[j])
+	return img
+
+
+def draw_info_about_the_closest(img, points, maxDistance):
+	dim = len(points)
+	for i in range(dim):
+		closest = points[i].getClosestPoint(points[:i] + points[i + 1:])
+		dist = points[i].getAbsoluteDistance(closest)
+		img = draw_tag(img, points[i], str(int(dist)))
+	return img
+
+
+# funzioni di calcolo
+def onePointEachPerson(centers_of_mass, maxDistance):
 	result = []
 	alreadyDone = []
-	dim = len(clustersInfo)
+	dim = len(centers_of_mass)
 	for i in range(dim):
-		max = maxDistance
-		if i not in alreadyDone and clustersInfo[i].isFoot:
-			point = clustersInfo[i].com
+		currentMax = maxDistance
+		if i not in alreadyDone:
+			point = centers_of_mass[i]
 			done = None
 			for j in range(i + 1, dim):
-				dist = getAbsoluteDistance(clustersInfo[i].com, clustersInfo[j].com)
-				if dist < max:
-					max = dist
-					point = midpoint(clustersInfo[i].com, clustersInfo[j].com)
+				dist = centers_of_mass[i].getAbsoluteDistance(centers_of_mass[j])
+				if dist < currentMax:
+					currentMax = dist
+					point = centers_of_mass[i].getMidPoint(centers_of_mass[j])
 					done = j
 			result.append(point)
 			if done:
@@ -120,21 +197,24 @@ class ObstacleManager(InferenceManager):
 			vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
 			print(visualisation.shape)
 
-			for i in clustersInfo:
-				x, y = findNearest(clustersInfo[i].com)
-				visualisation[x - 1:x + 1, y - 1:y + 1, 0] = 0
-				visualisation[x - 1:x + 1, y - 1:y + 1, 1:2] = 1
+			# trovo i baricentri dei clusters e li associo all'immagine
+			points = [Point(clusterInfo.com[0], clusterInfo.com[1]) for clusterInfo in clustersInfo.values() if
+							clusterInfo.isFoot]
+			visualisation = draw_points(visualisation, points, radius=1)
 
-			print("POINTS:")
-			points = onePointEachPerson(clustersInfo, 31)  # massima distanza tollerabile tra i piedi
-			for p in points:
-				x, y = findNearest(p)
-				print("(" + str(x) + "," + str(y) + ")")
-				visualisation[x - 2:x + 2, y - 2:y + 2, 0:2] = 1
-				cv2.imwrite(vis_save_path, (visualisation[:, :, ::-1] * 255).astype(np.uint8))
+			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
+			peoplePoints = onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
+			visualisation = draw_points(visualisation, peoplePoints, colorPoints=clr.to_rgba('yellow'))
 
+			# associo all'immagine le linee che uniscono le persone con tag riferito a distanza
+			visualisation = draw_distance(img=visualisation, points=peoplePoints, maxDistance=100)
+
+			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
+			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
+
+			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 			print("└> Saving visualisation to {}".format(vis_save_path))
-			cv2.imwrite(vis_save_path, (visualisation[:, :, ::-1] * 255).astype(np.uint8))
+			cv2.imwrite(vis_save_path, visualisation)
 
 
 if __name__ == '__main__':

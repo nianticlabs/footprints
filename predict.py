@@ -45,6 +45,35 @@ def findNearest(center_of_mass):
 	return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
 
 
+def getAbsoluteDistance(pointA, pointB):  # pointA[0] e' la x, pointB[1] e' la y
+	return pow((pointA[0] - pointB[0]) ** 2 + (pointA[1] - pointB[1]) ** 2, 1 / 2)
+
+
+def midpoint(pointA, pointB):
+	return [abs((pointA[0] + pointB[0]) / 2), abs((pointA[1] + pointB[1]) / 2)]
+
+
+def onePointEachPerson(clustersInfo, maxDistance):
+	result = []
+	alreadyDone = []
+	dim = len(clustersInfo)
+	for i in range(dim):
+		max = maxDistance
+		if i not in alreadyDone and clustersInfo[i].isFoot:
+			point = clustersInfo[i].com
+			done = None
+			for j in range(i + 1, dim):
+				dist = getAbsoluteDistance(clustersInfo[i].com, clustersInfo[j].com)
+				if dist < max:
+					max = dist
+					point = midpoint(clustersInfo[i].com, clustersInfo[j].com)
+					done = j
+			result.append(point)
+			if done:
+				alreadyDone.append(done)
+	return result
+
+
 class ObstacleManager(InferenceManager):
 	def predict_for_single_image(self, image_path):
 		"""Use the model to predict for a single image and save results to disk
@@ -95,6 +124,14 @@ class ObstacleManager(InferenceManager):
 				x, y = findNearest(clustersInfo[i].com)
 				visualisation[x - 1:x + 1, y - 1:y + 1, 0] = 0
 				visualisation[x - 1:x + 1, y - 1:y + 1, 1:2] = 1
+
+			print("POINTS:")
+			points = onePointEachPerson(clustersInfo, 31)  # massima distanza tollerabile tra i piedi
+			for p in points:
+				x, y = findNearest(p)
+				print("(" + str(x) + "," + str(y) + ")")
+				visualisation[x - 2:x + 2, y - 2:y + 2, 0:2] = 1
+				cv2.imwrite(vis_save_path, (visualisation[:, :, ::-1] * 255).astype(np.uint8))
 
 			print("└> Saving visualisation to {}".format(vis_save_path))
 			cv2.imwrite(vis_save_path, (visualisation[:, :, ::-1] * 255).astype(np.uint8))

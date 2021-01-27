@@ -110,7 +110,7 @@ class InferenceManager:
             raise Exception("Can not find args.image: {}".format(image_path))
 
 
-def parse_args():
+def parse_args(f_additional_params=None):
     parser = argparse.ArgumentParser(
         description='Simple prediction from a footprints model.')
 
@@ -128,6 +128,8 @@ def parse_args():
     parser.add_argument("--save_dir", type=str,
                         help='where to save npy and visualisations to',
                         default="predictions")
+    if f_additional_params is not None:
+        f_additional_params(parser)
     return parser.parse_args()
 
 

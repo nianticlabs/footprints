@@ -1,3 +1,5 @@
+import argparse
+
 from footprints.predict_simple import InferenceManager, parse_args
 import torch
 import os
@@ -6,6 +8,8 @@ from footprints.utils import sigmoid_to_depth
 import numpy as np
 from scipy import ndimage
 from matplotlib import colors as clr
+
+import posenet
 
 
 class Point:
@@ -152,6 +156,63 @@ def onePointEachPerson(centers_of_mass, maxDistance):
 
 
 class ObstacleManager(InferenceManager):
+	def __init__(self, model_name, save_dir, use_cuda, save_visualisations=True):
+		super().__init__(model_name, save_dir, use_cuda, save_visualisations)
+		self.posenet_model = posenet.load_model(args.posenet_model)
+		if self.use_cuda:
+			self.posenet_model = self.posenet_model.cuda()
+		else:
+			self.posenet_model = self.posenet_model.cpu()
+		self.output_stride = self.posenet_model.output_stride
+
+	def posenet_predict(self, filename, base_out_image=None):
+		input_image, draw_image, output_scale = posenet.read_imgfile(
+			filename, scale_factor=args.scale_factor, output_stride=self.output_stride)
+
+		with torch.no_grad():
+			if self.use_cuda:
+				input_image = torch.Tensor(input_image).cuda()
+			else:
+				input_image = torch.Tensor(input_image).cpu()
+
+			heatmaps_result, offsets_result, displacement_fwd_result, displacement_bwd_result = self.posenet_model(input_image)
+
+			pose_scores, keypoint_scores, keypoint_coords = posenet.decode_multiple_poses(
+				heatmaps_result.squeeze(0),
+				offsets_result.squeeze(0),
+				displacement_fwd_result.squeeze(0),
+				displacement_bwd_result.squeeze(0),
+				output_stride=self.output_stride,
+				max_pose_detections=10,
+				min_pose_score=0.25)
+
+		keypoint_coords *= output_scale
+
+		if self.save_visualisations:
+			base_out_image = draw_image if base_out_image is None else base_out_image
+
+			draw_image = posenet.draw_skel_and_kp(
+				base_out_image, pose_scores, keypoint_scores, keypoint_coords,
+				min_pose_score=0.25, min_part_score=0.25)
+
+			if base_out_image is None:
+				vis_save_path = os.path.join(self.save_dir, "visualisations", "posenet_ " + os.path.basename(filename) + '.jpg')
+				cv2.imwrite(vis_save_path, draw_image)
+				print("Image saved to", vis_save_path)
+
+		if not args.notxt:
+			print()
+			print("Results for image: %s" % filename)
+			for pi in range(len(pose_scores)):
+				if pose_scores[pi] == 0.:
+					break
+				print('Pose #%d, score = %f' % (pi, pose_scores[pi]))
+				for ki, (s, c) in enumerate(zip(keypoint_scores[pi, :], keypoint_coords[pi, :, :])):
+					print('Keypoint %s, score = %f, coord = %s' % (posenet.PART_NAMES[ki], s, c))
+
+		return draw_image
+
+
 	def predict_for_single_image(self, image_path):
 		"""Use the model to predict for a single image and save results to disk
 		"""
@@ -213,12 +274,21 @@ class ObstacleManager(InferenceManager):
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
 
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
+
+			visualisation = self.posenet_predict(image_path, visualisation)
+
 			print("└> Saving visualisation to {}".format(vis_save_path))
 			cv2.imwrite(vis_save_path, visualisation)
 
 
+def posenet_params(parser: argparse.ArgumentParser):
+	parser.add_argument("--posenet_model", type=int, default=101)
+	parser.add_argument('--scale_factor', type=float, default=1.0)
+	parser.add_argument('--notxt', action='store_true')
+
+
 if __name__ == '__main__':
-	args = parse_args()
+	args = parse_args(posenet_params)
 	inference_manager = ObstacleManager(
 		model_name=args.model,
 		use_cuda=torch.cuda.is_available() and not args.no_cuda,

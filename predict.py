@@ -50,6 +50,9 @@ class Point:
 	def getYFloat(self):
 		return float(self.y)
 
+	def __str__(self):
+		return "[" + str(self.getXFloat()) + ", " + str(self.getYFloat()) + "]"
+
 class ClusterInfo:
 	def __init__(self, valore, dimensione, isFoot):
 		self.valore = valore
@@ -86,6 +89,52 @@ def find_clusters(array):
 
 def findNearest(center_of_mass):
 	return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
+
+
+def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
+	labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
+
+	feet_clusters = {el: [] for el in set(labels)}
+
+	for i in range(len(labels)):
+		feet_clusters[labels[i]].append(feet_coords[i])
+
+	if color is not None and visualisation is not None:
+		print("Feet clusters:", feet_clusters)
+
+	people_coords = list(feet_clusters[-1])
+	for label in feet_clusters:
+		if label >= 0:
+			if len(feet_clusters[label]) > 2:
+				print("In questo cluster ci sono", len(feet_clusters[label]), "punti:", feet_clusters[label])
+
+			p = Point.createFromList(feet_clusters[label][0]).getMidPoint(Point.createFromList(feet_clusters[label][1]))
+			people_coords.append([p.getXInt(), p.getYInt()])
+
+			if color is not None and visualisation is not None:
+				visualisation = draw_points(visualisation, [p], radius=3, colorPoints=color)
+
+	return feet_clusters, people_coords, visualisation
+
+
+def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
+	labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords).labels_)
+
+	people_clusters = {el: [] for el in set(labels)}
+
+	for i in range(len(labels)):
+		people_clusters[labels[i]].append(people_coords[i])
+
+	if colors is not None and visualisation is not None:
+		print("People clusters:", people_clusters)
+		i = 0
+		for label in people_clusters:
+			if label >= 0:
+				color = clr.to_rgba(colors[i % len(colors)])
+				visualisation = draw_points(visualisation, people_clusters[label], radius=3, colorPoints=color)
+				i += 1
+
+	return people_clusters, visualisation
 
 
 # funzioni per disegnare
@@ -274,48 +323,19 @@ class ObstacleManager(InferenceManager):
 
 			feet_coords = [[point.getXInt(), point.getYInt()] for point in points]
 
-			labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
-
-			print(feet_coords, labels)
-
-			feet_clusters = {el:[] for el in set(labels)}
-
-			for i in range(len(labels)):
-				feet_clusters[labels[i]].append(feet_coords[i])
-
-			print(feet_clusters)
-			print(feet_clusters[1])
-
 			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
 			peoplePoints = onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
 			visualisation = draw_points(visualisation, peoplePoints, colorPoints=clr.to_rgba('yellow'))
 
-			visualisation = draw_points(visualisation, feet_clusters[0], radius=5, colorPoints=clr.to_rgba('red'))
-			visualisation = draw_points(visualisation, feet_clusters[1], radius=5, colorPoints=clr.to_rgba('blue'))
+			colors = ["orange", "green", "blue", "chocolate", "dimgrey", "black"]
+
+			feet_clusters, people_coords_dbscan, visualisation = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), visualisation)
 
 			# associo all'immagine le linee che uniscono le persone con tag riferito a distanza
 			visualisation = draw_distance(img=visualisation, points=peoplePoints, maxDistance=100)
 
-			people_coords_dbscan = list(feet_clusters[-1])
-			for i in feet_clusters:
-				if i >= 0:
-					if len(feet_clusters[i]) > 2:
-						print("In questo cluster ci sono", len(feet_clusters[i]), "punti:", feet_clusters[i])
+			people_clusters_dbscan, visualisation = find_people_clusters_dbscan(people_coords_dbscan, colors, visualisation)
 
-					p = Point.createFromList(feet_clusters[i][0]).getMidPoint(Point.createFromList(feet_clusters[i][1]))
-					people_coords_dbscan.append([p.getXInt(), p.getYInt()])
-
-
-			labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords_dbscan).labels_)
-
-			print(labels)
-
-			people_clusters = {el: [] for el in set(labels)}
-
-			for i in range(len(labels)):
-				people_clusters[labels[i]].append(people_coords_dbscan[i])
-
-			visualisation = draw_points(visualisation, people_clusters[0], radius=5, colorPoints=clr.to_rgba('green'))
 			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
 

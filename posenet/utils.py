@@ -76,12 +76,13 @@ def draw_skeleton(
 
 
 def draw_skel_and_kp(
-        img, instance_scores, keypoint_scores, keypoint_coords,
+        img, instance_scores, keypoint_scores, keypoint_coords, kp_labels, clusters_interpersonali,
         min_pose_score=0.5, min_part_score=0.5):
 
     out_img = img
     adjacent_keypoints = []
     cv_keypoints = []
+    cv_keypoints_special = {el: [] for el in clusters_interpersonali}
     for ii, score in enumerate(instance_scores):
         if score < min_pose_score:
             continue
@@ -90,14 +91,24 @@ def draw_skel_and_kp(
             keypoint_scores[ii, :], keypoint_coords[ii, :, :], min_part_score)
         adjacent_keypoints.extend(new_keypoints)
 
-        for ks, kc in zip(keypoint_scores[ii, :], keypoint_coords[ii, :, :]):
+        for ks, kc, kl in zip(keypoint_scores[ii, :], keypoint_coords[ii, :, :], kp_labels[ii, :]):
             if ks < min_part_score:
                 continue
-            cv_keypoints.append(cv2.KeyPoint(kc[1], kc[0], 10. * ks))
+            if kl in clusters_interpersonali:
+                cv_keypoints_special[kl].append(cv2.KeyPoint(kc[1], kc[0], 10. * ks))
+            else:
+                cv_keypoints.append(cv2.KeyPoint(kc[1], kc[0], 10. * ks))
 
     if cv_keypoints:
         out_img = cv2.drawKeypoints(
             out_img, cv_keypoints, outImage=np.array([]), color=(255, 255, 0),
             flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
+    for i in cv_keypoints_special:
+        if cv_keypoints_special[i]:
+            out_img = cv2.drawKeypoints(
+                out_img, cv_keypoints_special[i], outImage=np.array([]), color=(0, 255, 255),
+                flags=cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
+
     out_img = cv2.polylines(out_img, adjacent_keypoints, isClosed=False, color=(255, 255, 0))
     return out_img

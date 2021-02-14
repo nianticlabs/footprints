@@ -92,6 +92,10 @@ def findNearest(center_of_mass):
 
 
 def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
+	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
+	if not feet_coords:
+		return [], [], visualisation
+
 	labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
 
 	feet_clusters = {el: [] for el in set(labels)}
@@ -118,6 +122,10 @@ def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
 
 
 def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
+	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
+	if not people_coords:
+		return [], visualisation
+
 	labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords).labels_)
 
 	people_clusters = {el: [] for el in set(labels)}

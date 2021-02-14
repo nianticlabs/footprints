@@ -361,15 +361,15 @@ class ObstacleManager(InferenceManager):
 
 			# create and save visualisation image
 			hidden_ground = hidden_ground[:, :, None]
-			# visualisation = original_image * (1 - hidden_ground)# + depth_colourmap * hidden_ground
-			visualisation = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
+			visualisation_footprints = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
+			visualisation_depth = original_image * 0.05 + depth_colourmap * 0.95
+
 			# visualisation = original_image * 0.05 + depth_colourmap * 0.95
 			# on = np.ones(shape=(682, 1024, 1))
 			# off = np.zeros(shape=(682, 1024, 1))
 			# colors = np.concatenate((on, off, off), axis=2)
 			# visualisation = original_image * (1 - feet) + feet * colors #np.ones(shape=original_image.shape)
 			visualisation = original_image * (1 - feet) + feet * depth_colourmap
-			vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
 			print(visualisation.shape)
 
 			# trovo i baricentri dei clusters e li associo all'immagine
@@ -395,11 +395,18 @@ class ObstacleManager(InferenceManager):
 			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
 
+			visualisation_footprints = (visualisation_footprints[:, :, ::-1] * 255).astype(np.uint8)
+			visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 
 			visualisation = self.posenet_predict(image_path, visualisation)
 
+			vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
+			vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
+			vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
 			print("└> Saving visualisation to {}".format(vis_save_path))
+			cv2.imwrite(vis_save_path_footprints, visualisation_footprints)
+			cv2.imwrite(vis_save_path_depth, visualisation_depth)
 			cv2.imwrite(vis_save_path, visualisation)
 
 

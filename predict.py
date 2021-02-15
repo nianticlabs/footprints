@@ -8,6 +8,8 @@ from footprints.utils import sigmoid_to_depth
 import numpy as np
 from scipy import ndimage
 from matplotlib import colors as clr
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 import posenet
 
@@ -148,11 +150,33 @@ def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
 	return people_clusters, visualisation
 
 
-def find_near_keypoints(keypoint_coords):
+def find_near_keypoints(keypoint_coords, hidden_depth=None):
 	# metto tutti i kp in un'unico array piatto e di interi, lo giro di DBSCAN che mi dice quali punti sono vicini.
-	# poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso
+	# poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso considero le due
+	# persone vicine
 	num_persone = len(keypoint_coords)
-	all_kp = keypoint_coords.reshape([num_persone * 17, 2])
+	all_kp = keypoint_coords.copy()
+
+	# per ogni persona potrei guardare quale tra leftAnkle (15) e rightAnkle (caviglia, 16) è più confident, e poi
+	# ottenere le coordinate di quella parte. Qui prendo direttamente rightAnkle e guardo il valore della depth
+	# nella matrice hidden_depth e lo inserisco in tutte le coordinate dei punti di quella persona
+	if hidden_depth is not None:
+		depth_column = []
+		for persona in keypoint_coords:
+			coord_ankle = findNearest(persona[16])
+			point_depth = hidden_depth[coord_ankle[0]][coord_ankle[1]] * 1
+			depth_column.append([[point_depth] for _ in range(17)])
+		all_kp = np.append(all_kp, depth_column, axis=2)
+
+	all_kp = all_kp.reshape([num_persone * 17, 2 if hidden_depth is None else 3])
+
+	if args.showplt:
+		fig = plt.figure()
+		ax = Axes3D(fig)
+		ax.scatter(all_kp[:, 2], all_kp[:, 1] * -1, all_kp[:, 0] * -1, s=60)
+		ax.view_init(azim=200)
+		plt.show()
+
 	all_kp = [findNearest(point) for point in all_kp]
 
 	labels = list(DBSCAN(eps=20, min_samples=2).fit(all_kp).labels_)
@@ -278,7 +302,7 @@ class ObstacleManager(InferenceManager):
 			self.posenet_model = self.posenet_model.cpu()
 		self.output_stride = self.posenet_model.output_stride
 
-	def posenet_predict(self, filename, base_out_image=None):
+	def posenet_predict(self, filename, base_out_image=None, hidden_depth=None):
 		input_image, draw_image, output_scale = posenet.read_imgfile(
 			filename, scale_factor=args.scale_factor, output_stride=self.output_stride)
 
@@ -304,7 +328,7 @@ class ObstacleManager(InferenceManager):
 		if self.save_visualisations:
 			base_out_image = draw_image if base_out_image is None else base_out_image
 
-			kp_labels, clusters_interpersonali, persone_vicine = find_near_keypoints(keypoint_coords)
+			kp_labels, clusters_interpersonali, persone_vicine = find_near_keypoints(keypoint_coords, hidden_depth)
 
 			print("Persone vicine:", persone_vicine)
 
@@ -352,6 +376,7 @@ class ObstacleManager(InferenceManager):
 			feet = np.expand_dims(feet, axis=2).astype(np.int)
 			print(feet.shape)
 			hidden_depth = cv2.resize(sigmoid_to_depth(pred[3]), original_image.size)
+
 			# TODO: da qui indentificare il centro di ogni footprint e vedere la distanza nello stesso punto della
 			# hidden_depth in modo da vedere quanto è distante nella scena
 			original_image = np.array(original_image) / 255.0
@@ -359,8 +384,8 @@ class ObstacleManager(InferenceManager):
 			# normalise the relevant parts of the depth map and apply colormap
 			_max = hidden_depth[hidden_ground].max()
 			_min = hidden_depth[hidden_ground].min()
-			hidden_depth = (hidden_depth - _min) / (_max - _min)
-			depth_colourmap = self.colormap(hidden_depth)[:, :, :3]  # ignore alpha channel
+			hidden_depth_normalized = (hidden_depth - _min) / (_max - _min)
+			depth_colourmap = self.colormap(hidden_depth_normalized)[:, :, :3]  # ignore alpha channel
 
 			# create and save visualisation image
 			hidden_ground = hidden_ground[:, :, None]
@@ -402,7 +427,7 @@ class ObstacleManager(InferenceManager):
 			visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 
-			visualisation = self.posenet_predict(image_path, visualisation)
+			visualisation = self.posenet_predict(image_path, visualisation, hidden_depth)
 
 			vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
 			vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
@@ -417,6 +442,7 @@ def posenet_params(parser: argparse.ArgumentParser):
 	parser.add_argument("--posenet_model", type=int, default=101)
 	parser.add_argument('--scale_factor', type=float, default=1.0)
 	parser.add_argument('--notxt', action='store_true')
+	parser.add_argument('--showplt', action='store_true')
 
 
 if __name__ == '__main__':

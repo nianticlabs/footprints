@@ -53,6 +53,7 @@ class Point:
 	def __str__(self):
 		return "[" + str(self.getXFloat()) + ", " + str(self.getYFloat()) + "]"
 
+
 class ClusterInfo:
 	def __init__(self, valore, dimensione, isFoot):
 		self.valore = valore
@@ -146,48 +147,50 @@ def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
 
 	return people_clusters, visualisation
 
+
 def find_near_keypoints(keypoint_coords):
-	#metto tutti i kp in un'unico array piatto e di interi, lo giro di DBSCAN che mi dice quali punti sono vicini.
-	#poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso
+	# metto tutti i kp in un'unico array piatto e di interi, lo giro di DBSCAN che mi dice quali punti sono vicini.
+	# poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso
 	num_persone = len(keypoint_coords)
 	all_kp = keypoint_coords.reshape([num_persone * 17, 2])
 	all_kp = [findNearest(point) for point in all_kp]
 
 	labels = list(DBSCAN(eps=20, min_samples=2).fit(all_kp).labels_)
 
-	#lo raggruppo nuovamente per persona
+	# lo raggruppo nuovamente per persona
 
 	labels = np.array(labels).reshape((num_persone, 17))
 
-	#per ogni persona vedo quali label ha
+	# per ogni persona vedo quali label ha
 
 	cluster_nelle_persone = {}
 	for i, persona_label in enumerate(labels):
 		cluster_nelle_persone[i] = set(persona_label)
 
-	#confronto le varie persone per vedere se hanno label in comune. Se si, contrassegno quel cluster come cluster
-	#interpersonale e quindi da evidenziare
+	# confronto le varie persone per vedere se hanno label in comune. Se si, contrassegno quel cluster come cluster
+	# interpersonale e quindi da evidenziare
 
 	clusters_interpersonali = []
-	persone_vicine = [] #array di (p1, p2, cluster_id)
+	persone_vicine = []  # array di (p1, p2, cluster_id)
 
 	for i in cluster_nelle_persone.keys():
 		for j in range(i+1, len(cluster_nelle_persone)):
 			cluster_comune = list(cluster_nelle_persone[i].intersection(cluster_nelle_persone[j]))
 			if len(cluster_comune) > 1 or (-1 not in cluster_comune and len(cluster_comune) > 0):
-				#non c'è solo il -1 dei punti sparsi in comune
-				#se il cluster non è -1 e non è già in quelli da controllare
+				# non c'è solo il -1 dei punti sparsi in comune
+				# se il cluster non è -1 e non è già in quelli da controllare
 				for cluster in cluster_comune:
 					if cluster != -1:
 						persone_vicine.append((i, j, cluster))
 						if cluster not in clusters_interpersonali:
 							clusters_interpersonali.append(cluster)
 
-	#così con persone_vicine posso subito vedere quali persone sono vicine tra loro
-	#con labels e clusters_interpersonali invece posso disegnare i punti in comune: quando disegno i punti controllo
-	#il label corrispondente e se si trova in clusters_interpersonali
+	# così con persone_vicine posso subito vedere quali persone sono vicine tra loro
+	# con labels e clusters_interpersonali invece posso disegnare i punti in comune: quando disegno i punti controllo
+	# il label corrispondente e se si trova in clusters_interpersonali
 
 	return labels, clusters_interpersonali, persone_vicine
+
 
 # funzioni per disegnare
 def draw_points(img, points, radius=2, colorPoints=clr.to_rgba('white')):

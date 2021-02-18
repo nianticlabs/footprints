@@ -164,7 +164,7 @@ def find_near_keypoints(keypoint_coords, hidden_depth=None):
 		depth_column = []
 		for persona in keypoint_coords:
 			coord_ankle = findNearest(persona[16])
-			point_depth = hidden_depth[coord_ankle[0]][coord_ankle[1]] * 1
+			point_depth = hidden_depth[coord_ankle[0]][coord_ankle[1]] * 10
 			depth_column.append([[point_depth] for _ in range(17)])
 		all_kp = np.append(all_kp, depth_column, axis=2)
 
@@ -177,9 +177,7 @@ def find_near_keypoints(keypoint_coords, hidden_depth=None):
 		ax.view_init(azim=200)
 		plt.show()
 
-	all_kp = [findNearest(point) for point in all_kp]
-
-	labels = list(DBSCAN(eps=20, min_samples=2).fit(all_kp).labels_)
+	labels = list(DBSCAN(eps=30, min_samples=2).fit(all_kp).labels_)
 
 	# lo raggruppo nuovamente per persona
 

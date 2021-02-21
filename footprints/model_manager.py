@@ -30,11 +30,11 @@ class ModelManager:
     def load_model(self, weights_path, load_optimiser=False):
 
         print('loading model weights from {}...'.format(weights_path))
-        weights = torch.load(os.path.join(weights_path, 'model.pth'))
         if torch.cuda.is_available():
-            self.model.load_state_dict(weights)
+            weights = torch.load(os.path.join(weights_path, 'model.pth'))
         else:
-            self.model.load_state_dict(weights, map_location='cpu')
+            weights = torch.load(os.path.join(weights_path, 'model.pth'), map_location='cpu')
+        self.model.load_state_dict(weights)
         print('successfully loaded weights!')
 
         if load_optimiser:

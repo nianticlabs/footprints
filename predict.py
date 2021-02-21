@@ -10,10 +10,42 @@ from scipy import ndimage
 from matplotlib import colors as clr
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import time
+from datetime import datetime
 
 import posenet
 
 from sklearn.cluster import DBSCAN
+
+
+class Time:
+	def __init__(self, save_dir, img_name, use_cuda, opt_level, img_shape=None):
+		self.save_dir = save_dir
+		self.start = time.time()
+		self.img_name = img_name
+		self.use_cuda = use_cuda
+		self.opt_level = opt_level
+		self.img_shape = img_shape
+		self.steps = []
+
+	def add_step(self, text):
+		self.steps.append([time.time(), text])
+
+	def write_info(self):
+		shape = " " + str(self.img_shape[0]) + "x" + str(self.img_shape[1]) if self.img_shape is not None else ""
+		device = "GPU" if self.use_cuda else "CPU"
+		output_string = self.img_name + " [" + str(self.opt_level) + shape + " on " + device + "] ("\
+			+ str(datetime.fromtimestamp(self.start)) + "):\n"
+		if self.steps:
+			output_string += "-> " + self.steps[0][1] + ": " + str(self.steps[0][0] - self.start) + "\n"
+			for i in range(1, len(self.steps)):
+				output_string += "-> " + self.steps[i][1] + ": " + str(self.steps[i][0] - self.steps[i-1][0]) + "\n"
+			output_string += "TOTAL TIME ELAPSED: %f\n" % (self.steps[len(self.steps) - 1][0] - self.start)
+		output_string += "\n"
+
+		vis_save_path = os.path.join(self.save_dir, "execution_time.txt")
+		open(vis_save_path, "a").write(output_string)
+		print(output_string)
 
 
 class Point:
@@ -309,8 +341,11 @@ def onePointEachPerson(centers_of_mass, maxDistance):
 
 
 class ObstacleManager(InferenceManager):
-	def __init__(self, model_name, save_dir, use_cuda, save_visualisations=True):
+	def __init__(self, model_name, save_dir, use_cuda, opt_level, verbose, save_visualisations=True):
 		super().__init__(model_name, save_dir, use_cuda, save_visualisations)
+		self.save_dir = save_dir
+		self.opt_level = opt_level
+		self.verbose = verbose
 		self.posenet_model = posenet.load_model(args.posenet_model)
 		if self.use_cuda:
 			self.posenet_model = self.posenet_model.cuda()
@@ -373,10 +408,14 @@ class ObstacleManager(InferenceManager):
 	def predict_for_single_image(self, image_path):
 		"""Use the model to predict for a single image and save results to disk
 		"""
+		timestamp_manager = Time(save_dir=self.save_dir, img_name=image_path, use_cuda=self.use_cuda, opt_level=self.opt_level)
+
 		print("Predicting for {}".format(image_path))
 		original_image, preprocessed_image = self._load_and_preprocess_image(image_path)
 		pred = self.model_manager.model(preprocessed_image)
 		pred = pred['1/1'].data.cpu().numpy().squeeze(0)
+
+		timestamp_manager.img_shape = original_image.size
 
 		filename, _ = os.path.splitext(os.path.basename(image_path))
 		npy_save_path = os.path.join(self.save_dir, "outputs", filename + '.npy')
@@ -388,7 +427,13 @@ class ObstacleManager(InferenceManager):
 			# tutti i pred[0 -> 3] hanno shape (256, 448)
 			hidden_ground = cv2.resize(pred[1], original_image.size) > 0.95
 			print(hidden_ground.shape)
+
+			# STEP TIME
+			timestamp_manager.add_step("footprints")
 			clusters, numeroCluster, clustersInfo, feet = find_clusters(hidden_ground)
+			# STEP TIME
+			timestamp_manager.add_step("find_clusters")
+
 			feet = np.expand_dims(feet, axis=2).astype(np.int)
 			print(feet.shape)
 			hidden_depth = cv2.resize(sigmoid_to_depth(pred[3]), original_image.size)
@@ -424,18 +469,26 @@ class ObstacleManager(InferenceManager):
 
 			feet_coords = [[point.getXInt(), point.getYInt()] for point in points]
 
+			# STEP TIME
+			timestamp_manager.add_step("colormap+feet_coords")
+			feet_clusters, people_coords_dbscan = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
+			# STEP TIME
+			timestamp_manager.add_step("find_feet_clusters_dbscan")
+
 			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
 			peoplePoints = onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
 			draw.points(peoplePoints, colorPoints=clr.to_rgba('yellow'))
 
 			colors = ["orange", "green", "blue", "chocolate", "dimgrey", "black"]
 
-			feet_clusters, people_coords_dbscan = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
-
 			# associo all'immagine le linee che uniscono le persone con tag riferito a distanza
 			draw.distance(points=peoplePoints, maxDistance=100)
 
+			# STEP TIME
+			timestamp_manager.add_step("peoplePoints")
 			people_clusters_dbscan = find_people_clusters_dbscan(people_coords_dbscan, colors, draw)
+			# STEP TIME
+			timestamp_manager.add_step("find_people_clusters_dbscan")
 
 			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
@@ -449,7 +502,11 @@ class ObstacleManager(InferenceManager):
 			visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 
+			# STEP TIME
+			timestamp_manager.add_step("image_conversion_for_output")
 			visualisation = self.posenet_predict(image_path, visualisation, hidden_depth)
+			# STEP TIME
+			timestamp_manager.add_step("posenet_predict")
 
 			vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
 			vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
@@ -459,19 +516,27 @@ class ObstacleManager(InferenceManager):
 			cv2.imwrite(vis_save_path_depth, visualisation_depth)
 			cv2.imwrite(vis_save_path, visualisation)
 
+		if self.verbose:
+			timestamp_manager.write_info()
+
 
 def posenet_params(parser: argparse.ArgumentParser):
 	parser.add_argument("--posenet_model", type=int, default=101)
 	parser.add_argument('--scale_factor', type=float, default=1.0)
 	parser.add_argument('--notxt', action='store_true')
 	parser.add_argument('--showplt', action='store_true')
+	parser.add_argument('--verbose', action='store_true')
+	parser.add_argument('--opt_level', type=str, choices=['float64', 'float32', 'float16'], default='float64')
 
 
 if __name__ == '__main__':
 	args = parse_args(posenet_params)
+
 	inference_manager = ObstacleManager(
 		model_name=args.model,
 		use_cuda=torch.cuda.is_available() and not args.no_cuda,
+		opt_level=args.opt_level,
+		verbose=args.verbose,
 		save_visualisations=not args.no_save_vis,
 		save_dir=args.save_dir)
 	inference_manager.predict(image_path=args.image)

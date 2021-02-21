@@ -64,6 +64,75 @@ class ClusterInfo:
 		self.com = None
 
 
+class Draw:
+	def __init__(self, img):
+		self.img = img
+		self.stars_centers = []
+
+	def get_img(self):
+		return self.img
+
+	def points(self, points, radius=2, colorPoints=clr.to_rgba('white')):
+		for point in points:
+			if isinstance(point, Point):
+				x = point.getXInt()
+				y = point.getYInt()
+			elif isinstance(point, list):
+				x, y = point
+			self.img[x - radius:x + radius, y - radius:y + radius, 0:2] = colorPoints[0:2]
+
+	def line(self, pointA, pointB, colorLine=clr.to_rgba('blue')):
+		self.img = cv2.line(self.img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
+						thickness=1)
+
+	def tag(self, point, text, colorText=clr.to_rgba('red')):
+		self.img = cv2.putText(img=self.img, text=text, org=(point.getYInt(), point.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+						   color=colorText, thickness=1, fontScale=0.6)
+
+	def line_with_tag(self, pointA, pointB, text, colorLine=clr.to_rgba('blue'), colorText=clr.to_rgba('red')):
+		self.img = cv2.line(self.img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
+					   thickness=1)
+		midp = pointA.getMidPoint(pointB)
+		self.img = cv2.putText(img=self.img, text=text, org=(midp.getYInt(), midp.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+						  color=colorText, thickness=1, fontScale=0.6)
+
+	def distance(self, points, maxDistance, tag=True):
+		dim = len(points)
+		for i in range(dim):
+			for j in range(i + 1, dim):
+				# dist = getAbsoluteDistance(points[i], points[j]) perche' sono scambiate la x e la y? non esiste motivo logico
+				dist = points[i].getAbsoluteDistance(points[j])
+				if dist <= float(maxDistance):
+					if tag:
+						self.line_with_tag(points[i], points[j], str(int(dist)))
+					else:
+						self.line(points[i], points[j])
+
+	def info_about_the_closest(self, points, maxDistance):
+		dim = len(points)
+		for i in range(dim):
+			closest = points[i].getClosestPoint(points[:i] + points[i + 1:])
+			dist = points[i].getAbsoluteDistance(closest)
+			self.tag(points[i], str(int(dist)))
+
+	def star(self, radius, color):
+		if self.stars_centers:
+			center_point = Point(self.stars_centers[len(self.stars_centers) - 1].x + 3*radius, 3*radius)
+		else:
+			center_point = Point(3*radius, 3*radius)
+		self.stars_centers.append(center_point)
+		center = (center_point.x, center_point.y)
+		for i in range(radius):
+			self.img = cv2.circle(self.img, center, i, color)
+
+	def stars(self, num_stars, color, text="ALERT!"):
+		heigth, _, _ = self.img.shape
+		radius = int(heigth/80)
+		self.tag(Point(7*radius, 2*radius), text=text, colorText=color)
+		for i in range(num_stars):
+			self.star(radius, color)
+
+
 def find_clusters(array):
 	clustered = np.empty_like(array, dtype=np.int)
 	feet = np.zeros_like(array, dtype=np.bool)
@@ -94,10 +163,10 @@ def findNearest(center_of_mass):
 	return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
 
 
-def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
+def find_feet_clusters_dbscan(feet_coords, color=None, draw=None):
 	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
 	if not feet_coords:
-		return [], [], visualisation
+		return [], []
 
 	labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
 
@@ -106,7 +175,7 @@ def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
 	for i in range(len(labels)):
 		feet_clusters[labels[i]].append(feet_coords[i])
 
-	if color is not None and visualisation is not None:
+	if color is not None and draw is not None:
 		print("Feet clusters:", feet_clusters)
 
 	try:
@@ -122,16 +191,16 @@ def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
 			p = Point.createFromList(feet_clusters[label][0]).getMidPoint(Point.createFromList(feet_clusters[label][1]))
 			people_coords.append([p.getXInt(), p.getYInt()])
 
-			if color is not None and visualisation is not None:
-				visualisation = draw_points(visualisation, [p], radius=3, colorPoints=color)
+			if color is not None and draw is not None:
+				draw.points([p], radius=3, colorPoints=color)
 
-	return feet_clusters, people_coords, visualisation
+	return feet_clusters, people_coords
 
 
-def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
+def find_people_clusters_dbscan(people_coords, colors=None, draw=None):
 	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
 	if not people_coords:
-		return [], visualisation
+		return []
 
 	labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords).labels_)
 
@@ -140,18 +209,18 @@ def find_people_clusters_dbscan(people_coords, colors=None, visualisation=None):
 	for i in range(len(labels)):
 		people_clusters[labels[i]].append(people_coords[i])
 
-	if colors is not None and visualisation is not None:
+	if colors is not None and draw is not None:
 		print("People clusters:", people_clusters)
 		i = 0
 		for label in people_clusters:
 			if label >= 0:
 				color = clr.to_rgba(colors[i % len(colors)])
-				visualisation = draw_points(visualisation, people_clusters[label], radius=3, colorPoints=color)
+				draw.points(people_clusters[label], radius=3, colorPoints=color)
 				for persona in people_clusters[label]:
-					visualisation = draw_tag(visualisation, Point.createFromList([persona[0]+25, persona[1]-10]), str(i+1), colorText=clr.to_rgba('yellow'))
+					draw.tag(Point.createFromList([persona[0]+25, persona[1]-10]), str(i+1), colorText=clr.to_rgba('yellow'))
 				i += 1
 
-	return people_clusters, visualisation
+	return people_clusters
 
 
 def find_near_keypoints(keypoint_coords, hidden_depth=None):
@@ -216,61 +285,6 @@ def find_near_keypoints(keypoint_coords, hidden_depth=None):
 	# il label corrispondente e se si trova in clusters_interpersonali
 
 	return labels, clusters_interpersonali, persone_vicine
-
-
-# funzioni per disegnare
-def draw_points(img, points, radius=2, colorPoints=clr.to_rgba('white')):
-	for point in points:
-		if isinstance(point, Point):
-			x = point.getXInt()
-			y = point.getYInt()
-		elif isinstance(point, list):
-			x, y = point
-		img[x - radius:x + radius, y - radius:y + radius, 0:2] = colorPoints[0:2]
-	return img
-
-
-def draw_line(img, pointA, pointB, colorLine=clr.to_rgba('blue')):
-	return cv2.line(img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
-					thickness=1)
-
-
-def draw_tag(img, point, text, colorText=clr.to_rgba('red')):
-	return cv2.putText(img=img, text=text, org=(point.getYInt(), point.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-					   color=colorText, thickness=1, fontScale=0.6)
-
-
-def draw_line_with_tag(img, pointA, pointB, text, colorLine=clr.to_rgba('blue'), colorText=clr.to_rgba('red')):
-	img = cv2.line(img, (pointA.getYInt(), pointA.getXInt()), (pointB.getYInt(), pointB.getXInt()), color=colorLine,
-				   thickness=1)
-	midp = pointA.getMidPoint(pointB)
-	img = cv2.putText(img=img, text=text, org=(midp.getYInt(), midp.getXInt()), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-					  color=colorText, thickness=1, fontScale=0.6)
-	return img
-
-
-def draw_distance(img, points, maxDistance, tag=True):
-	dim = len(points)
-	for i in range(dim):
-		for j in range(i + 1, dim):
-			# dist = getAbsoluteDistance(points[i], points[j]) perche' sono scambiate la x e la y? non esiste motivo logico
-			dist = points[i].getAbsoluteDistance(points[j])
-			if dist <= float(maxDistance):
-				if tag:
-					img = draw_line_with_tag(img, points[i], points[j], str(int(dist)))
-				else:
-					img = draw_line(img, points[i], points[j])
-	return img
-
-
-def draw_info_about_the_closest(img, points, maxDistance):
-	dim = len(points)
-	for i in range(dim):
-		closest = points[i].getClosestPoint(points[:i] + points[i + 1:])
-		dist = points[i].getAbsoluteDistance(closest)
-		img = draw_tag(img, points[i], str(int(dist)))
-	return img
-
 
 # funzioni di calcolo
 def onePointEachPerson(centers_of_mass, maxDistance):
@@ -402,28 +416,34 @@ class ObstacleManager(InferenceManager):
 			visualisation = original_image * (1 - feet) + feet * depth_colourmap
 			print(visualisation.shape)
 
+			draw = Draw(visualisation)
 			# trovo i baricentri dei clusters e li associo all'immagine
 			points = [Point(clusterInfo.com[0], clusterInfo.com[1]) for clusterInfo in clustersInfo.values() if
 							clusterInfo.isFoot]
-			visualisation = draw_points(visualisation, points, radius=1)
+			draw.points(points, radius=1)
 
 			feet_coords = [[point.getXInt(), point.getYInt()] for point in points]
 
 			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
 			peoplePoints = onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
-			visualisation = draw_points(visualisation, peoplePoints, colorPoints=clr.to_rgba('yellow'))
+			draw.points(peoplePoints, colorPoints=clr.to_rgba('yellow'))
 
 			colors = ["orange", "green", "blue", "chocolate", "dimgrey", "black"]
 
-			feet_clusters, people_coords_dbscan, visualisation = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), visualisation)
+			feet_clusters, people_coords_dbscan = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
 
 			# associo all'immagine le linee che uniscono le persone con tag riferito a distanza
-			visualisation = draw_distance(img=visualisation, points=peoplePoints, maxDistance=100)
+			draw.distance(points=peoplePoints, maxDistance=100)
 
-			people_clusters_dbscan, visualisation = find_people_clusters_dbscan(people_coords_dbscan, colors, visualisation)
+			people_clusters_dbscan = find_people_clusters_dbscan(people_coords_dbscan, colors, draw)
 
 			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
+
+			# prova per stelle
+			draw.stars(5, clr.to_rgba('red'))
+
+			visualisation = draw.get_img()
 
 			visualisation_footprints = (visualisation_footprints[:, :, ::-1] * 255).astype(np.uint8)
 			visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)

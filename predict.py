@@ -109,7 +109,11 @@ def find_feet_clusters_dbscan(feet_coords, color=None, visualisation=None):
 	if color is not None and visualisation is not None:
 		print("Feet clusters:", feet_clusters)
 
-	people_coords = list(feet_clusters[-1])
+	try:
+		people_coords = list(feet_clusters[-1])
+	except KeyError:  # se non ci sono punti sparsi
+		people_coords = list()
+
 	for label in feet_clusters:
 		if label >= 0:
 			if len(feet_clusters[label]) > 2:

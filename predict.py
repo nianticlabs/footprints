@@ -47,6 +47,26 @@ class Time:
 		open(vis_save_path, "a").write(output_string)
 		print(output_string)
 
+	def write_info_csv(self):
+		shape = str(self.img_shape[0]) + "x" + str(self.img_shape[1]) if self.img_shape is not None else ""
+		device = "GPU" if self.use_cuda else "CPU"
+		output_string = self.img_name + "," + str(self.opt_level) + "," + shape + "," + device + ","\
+			+ str(datetime.fromtimestamp(self.start)) + ","
+		head = "FILENAME,OPT_LEVEL,SIZE,DEVICE,START_TIME,"
+		if self.steps:
+			output_string += str(self.steps[0][0] - self.start) + ","
+			head += self.steps[0][1] + ","
+			for i in range(1, len(self.steps)):
+				output_string += str(self.steps[i][0] - self.steps[i-1][0]) + ","
+				head += self.steps[i][1] + ","
+			output_string += "%f\n" % (self.steps[len(self.steps) - 1][0] - self.start)
+			head += "ELAPSED_TIME\n"
+		vis_save_path = os.path.join(self.save_dir, "execution_time.csv")
+		file = open(vis_save_path, "a")
+		if os.stat(vis_save_path).st_size == 0:
+			file.write(head)
+		file.write(output_string)
+
 
 class Point:
 	def __init__(self, x, y):
@@ -518,6 +538,7 @@ class ObstacleManager(InferenceManager):
 
 		if self.verbose:
 			timestamp_manager.write_info()
+			timestamp_manager.write_info_csv()
 
 
 def posenet_params(parser: argparse.ArgumentParser):

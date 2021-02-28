@@ -289,7 +289,12 @@ def find_near_keypoints(keypoint_coords, hidden_depth=None):
 		depth_column = []
 		for persona in keypoint_coords:
 			coord_ankle = findNearest(persona[16])
-			point_depth = hidden_depth[coord_ankle[0]][coord_ankle[1]] * 10
+			# in casi in cui lo score di quella parte del corpo è molto basso, potrebbe succedere che le coordinate
+			# sono fuori dall'immagine, sia con numeri più grandi della dimensione dell'immagine che in negativo.
+			# In questi casi porto le coordinate all'estremità dell'immagine
+			coord_ankle_x = max(min(hidden_depth.shape[0] - 1, coord_ankle[0]), 0)
+			coord_ankle_y = max(min(hidden_depth.shape[1] - 1, coord_ankle[1]), 0)
+			point_depth = hidden_depth[coord_ankle_x][coord_ankle_y] * 10
 			depth_column.append([[point_depth] for _ in range(17)])
 		all_kp = np.append(all_kp, depth_column, axis=2)
 

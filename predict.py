@@ -185,186 +185,6 @@ class Draw:
 			self.star(radius, color)
 
 
-def find_clusters(array):
-	clustered = np.empty_like(array, dtype=np.int)
-	feet = np.zeros_like(array, dtype=np.bool)
-	unique_vals = np.unique(array)
-	cluster_count = 0
-	clustersInfo = {}
-	ones = np.ones_like(array, dtype=int)
-	for val in unique_vals:
-		labelling, label_count = ndimage.label(array == val)
-		for k in range(1, label_count + 1):
-			clustered[labelling == k] = cluster_count
-			dimensione = len(clustered[labelling == k])
-			isFoot = False
-			if val == False and dimensione < 1000:  # val è del tipo np.bool_ quindi non posso usare val is False
-				feet[labelling == k] = True
-				isFoot = True
-			clustersInfo[cluster_count] = ClusterInfo(val, dimensione, isFoot)
-			cluster_count += 1
-
-	coms = ndimage.center_of_mass(ones, labels=clustered, index=range(cluster_count))
-	for i in range(cluster_count):
-		clustersInfo[i].com = coms[i]
-		print("Cluster #{}: {} elementi '{}' at {}".format(i, clustersInfo[i].dimensione, clustersInfo[i].valore, clustersInfo[i].com))
-	return clustered, cluster_count, clustersInfo, feet
-
-
-def findNearest(center_of_mass):
-	return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
-
-
-def find_feet_clusters_dbscan(feet_coords, color=None, draw=None):
-	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
-	if not feet_coords:
-		return [], []
-
-	labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
-
-	feet_clusters = {el: [] for el in set(labels)}
-
-	for i in range(len(labels)):
-		feet_clusters[labels[i]].append(feet_coords[i])
-
-	if color is not None and draw is not None:
-		print("Feet clusters:", feet_clusters)
-
-	try:
-		people_coords = list(feet_clusters[-1])
-	except KeyError:  # se non ci sono punti sparsi
-		people_coords = list()
-
-	for label in feet_clusters:
-		if label >= 0:
-			if len(feet_clusters[label]) > 2:
-				print("In questo cluster ci sono", len(feet_clusters[label]), "punti:", feet_clusters[label])
-
-			p = Point.createFromList(feet_clusters[label][0]).getMidPoint(Point.createFromList(feet_clusters[label][1]))
-			people_coords.append([p.getXInt(), p.getYInt()])
-
-			if color is not None and draw is not None:
-				draw.points([p], radius=3, colorPoints=color)
-
-	return feet_clusters, people_coords
-
-
-def find_people_clusters_dbscan(people_coords, colors=None, draw=None):
-	# DBSCAN non accetta liste vuote, quindi se questa lo è esco
-	if not people_coords:
-		return []
-
-	labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords).labels_)
-
-	people_clusters = {el: [] for el in set(labels)}
-
-	for i in range(len(labels)):
-		people_clusters[labels[i]].append(people_coords[i])
-
-	if colors is not None and draw is not None:
-		print("People clusters:", people_clusters)
-		i = 0
-		for label in people_clusters:
-			if label >= 0:
-				color = clr.to_rgba(colors[i % len(colors)])
-				draw.points(people_clusters[label], radius=3, colorPoints=color)
-				for persona in people_clusters[label]:
-					draw.tag(Point.createFromList([persona[0]+25, persona[1]-10]), str(i+1), colorText=clr.to_rgba('yellow'))
-				i += 1
-
-	return people_clusters
-
-
-def find_near_keypoints(keypoint_coords, hidden_depth=None):
-	# metto tutti i kp in un'unico array piatto e di interi, lo giro di DBSCAN che mi dice quali punti sono vicini.
-	# poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso considero le due
-	# persone vicine
-	num_persone = len(keypoint_coords)
-	all_kp = keypoint_coords.copy()
-
-	# per ogni persona potrei guardare quale tra leftAnkle (15) e rightAnkle (caviglia, 16) è più confident, e poi
-	# ottenere le coordinate di quella parte. Qui prendo direttamente rightAnkle e guardo il valore della depth
-	# nella matrice hidden_depth e lo inserisco in tutte le coordinate dei punti di quella persona
-	if hidden_depth is not None:
-		depth_column = []
-		for persona in keypoint_coords:
-			coord_ankle = findNearest(persona[16])
-			# in casi in cui lo score di quella parte del corpo è molto basso, potrebbe succedere che le coordinate
-			# sono fuori dall'immagine, sia con numeri più grandi della dimensione dell'immagine che in negativo.
-			# In questi casi porto le coordinate all'estremità dell'immagine
-			coord_ankle_x = max(min(hidden_depth.shape[0] - 1, coord_ankle[0]), 0)
-			coord_ankle_y = max(min(hidden_depth.shape[1] - 1, coord_ankle[1]), 0)
-			point_depth = hidden_depth[coord_ankle_x][coord_ankle_y] * 10
-			depth_column.append([[point_depth] for _ in range(17)])
-		all_kp = np.append(all_kp, depth_column, axis=2)
-
-	all_kp = all_kp.reshape([num_persone * 17, 2 if hidden_depth is None else 3])
-
-	if args.showplt:
-		fig = plt.figure()
-		ax = Axes3D(fig)
-		ax.scatter(all_kp[:, 2], all_kp[:, 1] * -1, all_kp[:, 0] * -1, s=60)
-		ax.view_init(azim=200)
-		plt.show()
-
-	labels = list(DBSCAN(eps=30, min_samples=2).fit(all_kp).labels_)
-
-	# lo raggruppo nuovamente per persona
-
-	labels = np.array(labels).reshape((num_persone, 17))
-
-	# per ogni persona vedo quali label ha
-
-	cluster_nelle_persone = {}
-	for i, persona_label in enumerate(labels):
-		cluster_nelle_persone[i] = set(persona_label)
-
-	# confronto le varie persone per vedere se hanno label in comune. Se si, contrassegno quel cluster come cluster
-	# interpersonale e quindi da evidenziare
-
-	clusters_interpersonali = []
-	persone_vicine = []  # array di (p1, p2, cluster_id)
-
-	for i in cluster_nelle_persone.keys():
-		for j in range(i+1, len(cluster_nelle_persone)):
-			cluster_comune = list(cluster_nelle_persone[i].intersection(cluster_nelle_persone[j]))
-			if len(cluster_comune) > 1 or (-1 not in cluster_comune and len(cluster_comune) > 0):
-				# non c'è solo il -1 dei punti sparsi in comune
-				# se il cluster non è -1 e non è già in quelli da controllare
-				for cluster in cluster_comune:
-					if cluster != -1:
-						persone_vicine.append((i, j, cluster))
-						if cluster not in clusters_interpersonali:
-							clusters_interpersonali.append(cluster)
-
-	# così con persone_vicine posso subito vedere quali persone sono vicine tra loro
-	# con labels e clusters_interpersonali invece posso disegnare i punti in comune: quando disegno i punti controllo
-	# il label corrispondente e se si trova in clusters_interpersonali
-
-	return labels, clusters_interpersonali, persone_vicine
-
-# funzioni di calcolo
-def onePointEachPerson(centers_of_mass, maxDistance):
-	result = []
-	alreadyDone = []
-	dim = len(centers_of_mass)
-	for i in range(dim):
-		currentMax = maxDistance
-		if i not in alreadyDone:
-			point = centers_of_mass[i]
-			done = None
-			for j in range(i + 1, dim):
-				dist = centers_of_mass[i].getAbsoluteDistance(centers_of_mass[j])
-				if dist < currentMax:
-					currentMax = dist
-					point = centers_of_mass[i].getMidPoint(centers_of_mass[j])
-					done = j
-			result.append(point)
-			if done:
-				alreadyDone.append(done)
-	return result
-
-
 class ObstacleManager(InferenceManager):
 	def __init__(self, model_name, save_dir, use_cuda, opt_level, verbose, more_output, save_visualisations=True):
 		super().__init__(model_name, save_dir, use_cuda, save_visualisations)
@@ -405,7 +225,7 @@ class ObstacleManager(InferenceManager):
 		if self.save_visualisations:
 			base_out_image = draw_image if base_out_image is None else base_out_image
 
-			kp_labels, clusters_interpersonali, persone_vicine = find_near_keypoints(keypoint_coords, hidden_depth)
+			kp_labels, clusters_interpersonali, persone_vicine = self.find_near_keypoints(keypoint_coords, hidden_depth)
 
 			print("Persone vicine:", persone_vicine)
 
@@ -457,7 +277,7 @@ class ObstacleManager(InferenceManager):
 
 			# STEP TIME
 			timestamp_manager.add_step("footprints")
-			clusters, numeroCluster, clustersInfo, feet = find_clusters(hidden_ground)
+			clusters, numeroCluster, clustersInfo, feet = self.find_clusters(hidden_ground)
 			# STEP TIME
 			timestamp_manager.add_step("find_clusters")
 
@@ -496,12 +316,12 @@ class ObstacleManager(InferenceManager):
 
 			# STEP TIME
 			timestamp_manager.add_step("colormap+feet_coords")
-			feet_clusters, people_coords_dbscan = find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
+			feet_clusters, people_coords_dbscan = self.find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
 			# STEP TIME
 			timestamp_manager.add_step("find_feet_clusters_dbscan")
 
 			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
-			peoplePoints = onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
+			peoplePoints = self.onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
 			draw.points(peoplePoints, colorPoints=clr.to_rgba('yellow'))
 
 			colors = ["orange", "green", "blue", "chocolate", "dimgrey", "black"]
@@ -511,7 +331,7 @@ class ObstacleManager(InferenceManager):
 
 			# STEP TIME
 			timestamp_manager.add_step("peoplePoints")
-			people_clusters_dbscan = find_people_clusters_dbscan(people_coords_dbscan, colors, draw)
+			people_clusters_dbscan = self.find_people_clusters_dbscan(people_coords_dbscan, colors, draw)
 			# STEP TIME
 			timestamp_manager.add_step("find_people_clusters_dbscan")
 
@@ -548,6 +368,186 @@ class ObstacleManager(InferenceManager):
 		if self.verbose:
 			timestamp_manager.write_info()
 			timestamp_manager.write_info_csv()
+
+	@staticmethod
+	def find_clusters(array):
+		clustered = np.empty_like(array, dtype=np.int)
+		feet = np.zeros_like(array, dtype=np.bool)
+		unique_vals = np.unique(array)
+		cluster_count = 0
+		clustersInfo = {}
+		ones = np.ones_like(array, dtype=int)
+		for val in unique_vals:
+			labelling, label_count = ndimage.label(array == val)
+			for k in range(1, label_count + 1):
+				clustered[labelling == k] = cluster_count
+				dimensione = len(clustered[labelling == k])
+				isFoot = False
+				if val == False and dimensione < 1000:  # val è del tipo np.bool_ quindi non posso usare val is False
+					feet[labelling == k] = True
+					isFoot = True
+				clustersInfo[cluster_count] = ClusterInfo(val, dimensione, isFoot)
+				cluster_count += 1
+
+		coms = ndimage.center_of_mass(ones, labels=clustered, index=range(cluster_count))
+		for i in range(cluster_count):
+			clustersInfo[i].com = coms[i]
+			print("Cluster #{}: {} elementi '{}' at {}".format(i, clustersInfo[i].dimensione, clustersInfo[i].valore, clustersInfo[i].com))
+		return clustered, cluster_count, clustersInfo, feet
+
+	@staticmethod
+	def findNearest(center_of_mass):
+		return int(round(center_of_mass[0])), int(round(center_of_mass[1]))
+
+	@staticmethod
+	def find_feet_clusters_dbscan(feet_coords, color=None, draw=None):
+		# DBSCAN non accetta liste vuote, quindi se questa lo è esco
+		if not feet_coords:
+			return [], []
+
+		labels = list(DBSCAN(eps=35, min_samples=2).fit(feet_coords).labels_)
+
+		feet_clusters = {el: [] for el in set(labels)}
+
+		for i in range(len(labels)):
+			feet_clusters[labels[i]].append(feet_coords[i])
+
+		if color is not None and draw is not None:
+			print("Feet clusters:", feet_clusters)
+
+		try:
+			people_coords = list(feet_clusters[-1])
+		except KeyError:  # se non ci sono punti sparsi
+			people_coords = list()
+
+		for label in feet_clusters:
+			if label >= 0:
+				if len(feet_clusters[label]) > 2:
+					print("In questo cluster ci sono", len(feet_clusters[label]), "punti:", feet_clusters[label])
+
+				p = Point.createFromList(feet_clusters[label][0]).getMidPoint(Point.createFromList(feet_clusters[label][1]))
+				people_coords.append([p.getXInt(), p.getYInt()])
+
+				if color is not None and draw is not None:
+					draw.points([p], radius=3, colorPoints=color)
+
+		return feet_clusters, people_coords
+
+	@staticmethod
+	def find_people_clusters_dbscan(people_coords, colors=None, draw=None):
+		# DBSCAN non accetta liste vuote, quindi se questa lo è esco
+		if not people_coords:
+			return []
+
+		labels = list(DBSCAN(eps=80, min_samples=2).fit(people_coords).labels_)
+
+		people_clusters = {el: [] for el in set(labels)}
+
+		for i in range(len(labels)):
+			people_clusters[labels[i]].append(people_coords[i])
+
+		if colors is not None and draw is not None:
+			print("People clusters:", people_clusters)
+			i = 0
+			for label in people_clusters:
+				if label >= 0:
+					color = clr.to_rgba(colors[i % len(colors)])
+					draw.points(people_clusters[label], radius=3, colorPoints=color)
+					for persona in people_clusters[label]:
+						draw.tag(Point.createFromList([persona[0] + 25, persona[1] - 10]), str(i + 1),
+								 colorText=clr.to_rgba('yellow'))
+					i += 1
+
+		return people_clusters
+
+	def find_near_keypoints(self, keypoint_coords, hidden_depth=None):
+		# metto tutti i kp in un'unico array piatto e di interi, lo giro di DBSCAN che mi dice quali punti sono vicini.
+		# poi vedo se ci sono punti di persone diverse che appartengono allo stesso cluster. Nel caso considero le due
+		# persone vicine
+		num_persone = len(keypoint_coords)
+		all_kp = keypoint_coords.copy()
+
+		# per ogni persona potrei guardare quale tra leftAnkle (15) e rightAnkle (caviglia, 16) è più confident, e poi
+		# ottenere le coordinate di quella parte. Qui prendo direttamente rightAnkle e guardo il valore della depth
+		# nella matrice hidden_depth e lo inserisco in tutte le coordinate dei punti di quella persona
+		if hidden_depth is not None:
+			depth_column = []
+			for persona in keypoint_coords:
+				coord_ankle = self.findNearest(persona[16])
+				# in casi in cui lo score di quella parte del corpo è molto basso, potrebbe succedere che le coordinate
+				# sono fuori dall'immagine, sia con numeri più grandi della dimensione dell'immagine che in negativo.
+				# In questi casi porto le coordinate all'estremità dell'immagine
+				coord_ankle_x = max(min(hidden_depth.shape[0] - 1, coord_ankle[0]), 0)
+				coord_ankle_y = max(min(hidden_depth.shape[1] - 1, coord_ankle[1]), 0)
+				point_depth = hidden_depth[coord_ankle_x][coord_ankle_y] * 10
+				depth_column.append([[point_depth] for _ in range(17)])
+			all_kp = np.append(all_kp, depth_column, axis=2)
+
+		all_kp = all_kp.reshape([num_persone * 17, 2 if hidden_depth is None else 3])
+
+		if args.showplt:
+			fig = plt.figure()
+			ax = Axes3D(fig)
+			ax.scatter(all_kp[:, 2], all_kp[:, 1] * -1, all_kp[:, 0] * -1, s=60)
+			ax.view_init(azim=200)
+			plt.show()
+
+		labels = list(DBSCAN(eps=30, min_samples=2).fit(all_kp).labels_)
+
+		# lo raggruppo nuovamente per persona
+
+		labels = np.array(labels).reshape((num_persone, 17))
+
+		# per ogni persona vedo quali label ha
+
+		cluster_nelle_persone = {}
+		for i, persona_label in enumerate(labels):
+			cluster_nelle_persone[i] = set(persona_label)
+
+		# confronto le varie persone per vedere se hanno label in comune. Se si, contrassegno quel cluster come cluster
+		# interpersonale e quindi da evidenziare
+
+		clusters_interpersonali = []
+		persone_vicine = []  # array di (p1, p2, cluster_id)
+
+		for i in cluster_nelle_persone.keys():
+			for j in range(i + 1, len(cluster_nelle_persone)):
+				cluster_comune = list(cluster_nelle_persone[i].intersection(cluster_nelle_persone[j]))
+				if len(cluster_comune) > 1 or (-1 not in cluster_comune and len(cluster_comune) > 0):
+					# non c'è solo il -1 dei punti sparsi in comune
+					# se il cluster non è -1 e non è già in quelli da controllare
+					for cluster in cluster_comune:
+						if cluster != -1:
+							persone_vicine.append((i, j, cluster))
+							if cluster not in clusters_interpersonali:
+								clusters_interpersonali.append(cluster)
+
+		# così con persone_vicine posso subito vedere quali persone sono vicine tra loro
+		# con labels e clusters_interpersonali invece posso disegnare i punti in comune: quando disegno i punti controllo
+		# il label corrispondente e se si trova in clusters_interpersonali
+
+		return labels, clusters_interpersonali, persone_vicine
+
+	@staticmethod
+	def onePointEachPerson(centers_of_mass, maxDistance):
+		result = []
+		alreadyDone = []
+		dim = len(centers_of_mass)
+		for i in range(dim):
+			currentMax = maxDistance
+			if i not in alreadyDone:
+				point = centers_of_mass[i]
+				done = None
+				for j in range(i + 1, dim):
+					dist = centers_of_mass[i].getAbsoluteDistance(centers_of_mass[j])
+					if dist < currentMax:
+						currentMax = dist
+						point = centers_of_mass[i].getMidPoint(centers_of_mass[j])
+						done = j
+				result.append(point)
+				if done:
+					alreadyDone.append(done)
+		return result
 
 
 def posenet_params(parser: argparse.ArgumentParser):

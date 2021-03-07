@@ -366,11 +366,12 @@ def onePointEachPerson(centers_of_mass, maxDistance):
 
 
 class ObstacleManager(InferenceManager):
-	def __init__(self, model_name, save_dir, use_cuda, opt_level, verbose, save_visualisations=True):
+	def __init__(self, model_name, save_dir, use_cuda, opt_level, verbose, more_output, save_visualisations=True):
 		super().__init__(model_name, save_dir, use_cuda, save_visualisations)
 		self.save_dir = save_dir
 		self.opt_level = opt_level
 		self.verbose = verbose
+		self.more_output = more_output
 		self.posenet_model = posenet.load_model(args.posenet_model)
 		if self.use_cuda:
 			self.posenet_model = self.posenet_model.cuda()
@@ -417,7 +418,7 @@ class ObstacleManager(InferenceManager):
 				cv2.imwrite(vis_save_path, draw_image)
 				print("Image saved to", vis_save_path)
 
-		if not args.notxt:
+		if self.more_output:
 			print()
 			print("Results for image: %s" % filename)
 			for pi in range(len(pose_scores)):
@@ -443,9 +444,10 @@ class ObstacleManager(InferenceManager):
 		timestamp_manager.img_shape = original_image.size
 
 		filename, _ = os.path.splitext(os.path.basename(image_path))
-		npy_save_path = os.path.join(self.save_dir, "outputs", filename + '.npy')
-		print("└> Saving predictions to {}".format(npy_save_path))
-		np.save(npy_save_path, pred)
+		if args.more_output:
+			npy_save_path = os.path.join(self.save_dir, "outputs", filename + '.npy')
+			print("└> Saving predictions to {}".format(npy_save_path))
+			np.save(npy_save_path, pred)
 
 		if self.save_visualisations:
 			# print(pred[1].shape, pred.shape)
@@ -475,8 +477,6 @@ class ObstacleManager(InferenceManager):
 
 			# create and save visualisation image
 			hidden_ground = hidden_ground[:, :, None]
-			visualisation_footprints = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
-			visualisation_depth = original_image * 0.05 + depth_colourmap * 0.95
 
 			# visualisation = original_image * 0.05 + depth_colourmap * 0.95
 			# on = np.ones(shape=(682, 1024, 1))
@@ -523,8 +523,6 @@ class ObstacleManager(InferenceManager):
 
 			visualisation = draw.get_img()
 
-			visualisation_footprints = (visualisation_footprints[:, :, ::-1] * 255).astype(np.uint8)
-			visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 
 			# STEP TIME
@@ -533,13 +531,19 @@ class ObstacleManager(InferenceManager):
 			# STEP TIME
 			timestamp_manager.add_step("posenet_predict")
 
-			vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
-			vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
+			if self.more_output:
+				visualisation_footprints = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
+				visualisation_depth = original_image * 0.05 + depth_colourmap * 0.95
+				visualisation_footprints = (visualisation_footprints[:, :, ::-1] * 255).astype(np.uint8)
+				visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
+				vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
+				vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
+				cv2.imwrite(vis_save_path_footprints, visualisation_footprints)
+				cv2.imwrite(vis_save_path_depth, visualisation_depth)
+
 			vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
-			print("└> Saving visualisation to {}".format(vis_save_path))
-			cv2.imwrite(vis_save_path_footprints, visualisation_footprints)
-			cv2.imwrite(vis_save_path_depth, visualisation_depth)
 			cv2.imwrite(vis_save_path, visualisation)
+			print("└> Saving visualisation to {}".format(vis_save_path))
 
 		if self.verbose:
 			timestamp_manager.write_info()
@@ -549,9 +553,10 @@ class ObstacleManager(InferenceManager):
 def posenet_params(parser: argparse.ArgumentParser):
 	parser.add_argument("--posenet_model", type=int, default=101)
 	parser.add_argument('--scale_factor', type=float, default=1.0)
-	parser.add_argument('--notxt', action='store_true')
-	parser.add_argument('--showplt', action='store_true')
-	parser.add_argument('--verbose', action='store_true')
+	parser.add_argument('--more_output', action='store_true',
+					help="if set, shows pose coordinates and saves footprints and depth visualisation")
+	parser.add_argument('--showplt', action='store_true', help="if set, show a 3D plot of the keypoints in the scene")
+	parser.add_argument('--verbose', action='store_true', help="if set, saves execution times to file")
 	parser.add_argument('--opt_level', type=str, choices=['float64', 'float32', 'float16'], default='float64')
 
 
@@ -559,10 +564,11 @@ if __name__ == '__main__':
 	args = parse_args(posenet_params)
 
 	inference_manager = ObstacleManager(
-		model_name=args.model,
+		model_name=args.model if args.model else "handheld",
 		use_cuda=torch.cuda.is_available() and not args.no_cuda,
 		opt_level=args.opt_level,
 		verbose=args.verbose,
+		more_output=args.more_output,
 		save_visualisations=not args.no_save_vis,
 		save_dir=args.save_dir)
 	inference_manager.predict(image_path=args.image)

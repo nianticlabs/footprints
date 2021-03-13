@@ -124,6 +124,10 @@ class Draw:
 	def get_img(self):
 		return self.img
 
+	def set_img(self, img):
+		self.img = img
+		self.stars_centers = []
+
 	def points(self, points, radius=2, colorPoints=clr.to_rgba('white')):
 		for point in points:
 			if isinstance(point, Point):
@@ -152,7 +156,6 @@ class Draw:
 		dim = len(points)
 		for i in range(dim):
 			for j in range(i + 1, dim):
-				# dist = getAbsoluteDistance(points[i], points[j]) perche' sono scambiate la x e la y? non esiste motivo logico
 				dist = points[i].getAbsoluteDistance(points[j])
 				if dist <= float(maxDistance):
 					if tag:
@@ -177,7 +180,17 @@ class Draw:
 		for i in range(radius):
 			self.img = cv2.circle(self.img, center, i, color)
 
-	def stars(self, num_stars, color, text="ALERT!"):
+	def stars(self, num_stars, color, text="ALERT!", uint8=False):
+		if uint8:
+			color = clr.to_rgb(color)
+			colorR = []
+			colorR.append(int(color[2]*255))
+			colorR.append(int(color[1]*255))
+			colorR.append(int(color[0]*255))
+			color = colorR
+		else:
+			color = clr.to_rgba(color)
+
 		heigth, _, _ = self.img.shape
 		radius = int(heigth/80)
 		self.tag(Point(7*radius, 2*radius), text=text, colorText=color)
@@ -338,11 +351,8 @@ class ObstacleManager(InferenceManager):
 			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
 			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
 
-			# prova per stelle
-			draw.stars(5, clr.to_rgba('red'))
-
 			visualisation = draw.get_img()
-
+			print(visualisation)
 			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
 
 			# STEP TIME
@@ -350,7 +360,8 @@ class ObstacleManager(InferenceManager):
 			visualisation = self.posenet_predict(image_path, visualisation, hidden_depth)
 			# STEP TIME
 			timestamp_manager.add_step("posenet_predict")
-
+			draw.set_img(visualisation)
+			draw.stars(5, color='blue', uint8=True)
 			if self.more_output:
 				visualisation_footprints = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
 				visualisation_depth = original_image * 0.05 + depth_colourmap * 0.95

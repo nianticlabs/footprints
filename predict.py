@@ -14,6 +14,9 @@ import time
 from datetime import datetime
 
 import posenet
+import midas.run as midas
+from PIL import Image
+
 
 from sklearn.cluster import DBSCAN
 
@@ -182,12 +185,9 @@ class Draw:
 
 	def stars(self, num_stars, color, text="ALERT!", uint8=False):
 		if uint8:
-			color = clr.to_rgb(color)
-			colorR = []
-			colorR.append(int(color[2]*255))
-			colorR.append(int(color[1]*255))
-			colorR.append(int(color[0]*255))
-			color = colorR
+			color = [int(channel * 255) for channel in clr.to_rgb(color)]
+			color.reverse()
+
 		else:
 			color = clr.to_rgba(color)
 
@@ -197,6 +197,11 @@ class Draw:
 		for i in range(num_stars):
 			self.star(radius, color)
 
+
+def pil_loader(path):
+    with open(path, 'rb') as file_handler:
+        with Image.open(file_handler) as img:
+            return img.convert('RGB')
 
 class ObstacleManager(InferenceManager):
 	def __init__(self, model_name, save_dir, use_cuda, opt_level, verbose, more_output, save_visualisations=True):
@@ -251,6 +256,7 @@ class ObstacleManager(InferenceManager):
 				cv2.imwrite(vis_save_path, draw_image)
 				print("Image saved to", vis_save_path)
 
+		self.more_output = True
 		if self.more_output:
 			print()
 			print("Results for image: %s" % filename)
@@ -267,118 +273,16 @@ class ObstacleManager(InferenceManager):
 	def predict_for_single_image(self, image_path):
 		"""Use the model to predict for a single image and save results to disk
 		"""
-		timestamp_manager = Time(save_dir=self.save_dir, img_name=image_path, use_cuda=self.use_cuda, opt_level=self.opt_level)
-
-		print("Predicting for {}".format(image_path))
-		original_image, preprocessed_image = self._load_and_preprocess_image(image_path)
-		pred = self.model_manager.model(preprocessed_image)
-		pred = pred['1/1'].data.cpu().numpy().squeeze(0)
-
-		timestamp_manager.img_shape = original_image.size
-
 		filename, _ = os.path.splitext(os.path.basename(image_path))
-		if args.more_output:
-			npy_save_path = os.path.join(self.save_dir, "outputs", filename + '.npy')
-			print("└> Saving predictions to {}".format(npy_save_path))
-			np.save(npy_save_path, pred)
+		original_img = pil_loader(image_path)
 
-		if self.save_visualisations:
-			# print(pred[1].shape, pred.shape)
-			# tutti i pred[0 -> 3] hanno shape (256, 448)
-			hidden_ground = cv2.resize(pred[1], original_image.size) > 0.95
-			print(hidden_ground.shape)
+		hidden_depth = midas.run(image_path)
+		original_img = self.posenet_predict(image_path, hidden_depth=hidden_depth)
 
-			# STEP TIME
-			timestamp_manager.add_step("footprints")
-			clusters, numeroCluster, clustersInfo, feet = self.find_clusters(hidden_ground)
-			# STEP TIME
-			timestamp_manager.add_step("find_clusters")
+		vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
+		cv2.imwrite(vis_save_path, original_img)
+		print("└> Saving visualisation to {}".format(vis_save_path))
 
-			feet = np.expand_dims(feet, axis=2).astype(np.int)
-			print(feet.shape)
-			hidden_depth = cv2.resize(sigmoid_to_depth(pred[3]), original_image.size)
-
-			# TODO: da qui indentificare il centro di ogni footprint e vedere la distanza nello stesso punto della
-			# hidden_depth in modo da vedere quanto è distante nella scena
-			original_image = np.array(original_image) / 255.0
-
-			# normalise the relevant parts of the depth map and apply colormap
-			_max = hidden_depth[hidden_ground].max()
-			_min = hidden_depth[hidden_ground].min()
-			hidden_depth_normalized = (hidden_depth - _min) / (_max - _min)
-			depth_colourmap = self.colormap(hidden_depth_normalized)[:, :, :3]  # ignore alpha channel
-
-			# create and save visualisation image
-			hidden_ground = hidden_ground[:, :, None]
-
-			# visualisation = original_image * 0.05 + depth_colourmap * 0.95
-			# on = np.ones(shape=(682, 1024, 1))
-			# off = np.zeros(shape=(682, 1024, 1))
-			# colors = np.concatenate((on, off, off), axis=2)
-			# visualisation = original_image * (1 - feet) + feet * colors #np.ones(shape=original_image.shape)
-			visualisation = original_image * (1 - feet) + feet * depth_colourmap
-			print(visualisation.shape)
-
-			draw = Draw(visualisation)
-			# trovo i baricentri dei clusters e li associo all'immagine
-			points = [Point(clusterInfo.com[0], clusterInfo.com[1]) for clusterInfo in clustersInfo.values() if
-							clusterInfo.isFoot]
-			draw.points(points, radius=1)
-
-			feet_coords = [[point.getXInt(), point.getYInt()] for point in points]
-
-			# STEP TIME
-			timestamp_manager.add_step("colormap+feet_coords")
-			feet_clusters, people_coords_dbscan = self.find_feet_clusters_dbscan(feet_coords, clr.to_rgba('red'), draw)
-			# STEP TIME
-			timestamp_manager.add_step("find_feet_clusters_dbscan")
-
-			# a partire dai baricentri accoppio i piedi identificando le persone e associo questi punti all'immagine
-			peoplePoints = self.onePointEachPerson(points, 31)  # massima distanza tollerabile tra i piedi
-			draw.points(peoplePoints, colorPoints=clr.to_rgba('yellow'))
-
-			colors = ["orange", "green", "blue", "chocolate", "dimgrey", "black"]
-
-			# associo all'immagine le linee che uniscono le persone con tag riferito a distanza
-			draw.distance(points=peoplePoints, maxDistance=100)
-
-			# STEP TIME
-			timestamp_manager.add_step("peoplePoints")
-			people_clusters_dbscan = self.find_people_clusters_dbscan(people_coords_dbscan, colors, draw)
-			# STEP TIME
-			timestamp_manager.add_step("find_people_clusters_dbscan")
-
-			# associo all'immagine un tag per ogni persona con scritto la distanza della persona piu vicina
-			# visualisation = draw_info_about_the_closest(img=visualisation, points=peoplePoints, maxDistance=100)
-
-			visualisation = draw.get_img()
-			print(visualisation)
-			visualisation = (visualisation[:, :, ::-1] * 255).astype(np.uint8)
-
-			# STEP TIME
-			timestamp_manager.add_step("image_conversion_for_output")
-			visualisation = self.posenet_predict(image_path, visualisation, hidden_depth)
-			# STEP TIME
-			timestamp_manager.add_step("posenet_predict")
-			draw.set_img(visualisation)
-			draw.stars(5, color='blue', uint8=True)
-			if self.more_output:
-				visualisation_footprints = original_image * (1 - hidden_ground) + depth_colourmap * hidden_ground
-				visualisation_depth = original_image * 0.05 + depth_colourmap * 0.95
-				visualisation_footprints = (visualisation_footprints[:, :, ::-1] * 255).astype(np.uint8)
-				visualisation_depth = (visualisation_depth[:, :, ::-1] * 255).astype(np.uint8)
-				vis_save_path_footprints = os.path.join(self.save_dir, "visualisations", filename + '_footprints.jpg')
-				vis_save_path_depth = os.path.join(self.save_dir, "visualisations", filename + '_depth.jpg')
-				cv2.imwrite(vis_save_path_footprints, visualisation_footprints)
-				cv2.imwrite(vis_save_path_depth, visualisation_depth)
-
-			vis_save_path = os.path.join(self.save_dir, "visualisations", filename + '.jpg')
-			cv2.imwrite(vis_save_path, visualisation)
-			print("└> Saving visualisation to {}".format(vis_save_path))
-
-		if self.verbose:
-			timestamp_manager.write_info()
-			timestamp_manager.write_info_csv()
 
 	@staticmethod
 	def find_clusters(array):
@@ -422,7 +326,7 @@ class ObstacleManager(InferenceManager):
 
 		for i in range(len(labels)):
 			feet_clusters[labels[i]].append(feet_coords[i])
-
+		
 		if color is not None and draw is not None:
 			print("Feet clusters:", feet_clusters)
 

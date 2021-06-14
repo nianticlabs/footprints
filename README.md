@@ -90,6 +90,22 @@ You will also need per-image training data generated from the video sequences:
 Our versions of these can be found [HERE](https://console.cloud.google.com/storage/browser/niantic-lon-static/research/footprints/data). 
 Download these and edit the `training_data` field of `paths.yaml` to point to them.
 
+- KITTI
+    - [depth_masks.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/depth_masks.zip)
+    - [ground_seg.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/ground_seg.zip)
+    - [hidden_depths.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/hidden_depths.zip)
+    - [moving_objects.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/moving_objects.zip)
+    - [optical_flow.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/optical_flow.zip)
+    - [poses.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/poses.zip)
+    - [splits.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/splits.zip)
+    - [stereo_matching_disps.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/kitti/training_data/stereo_matching_disps.zip)
+- Matterport
+    - [depth_masks.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/matterport/depth_masks.zip)
+    - [ground_seg.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/matterport/ground_seg.zip)
+    - [hidden_depth.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/matterport/hidden_depth.zip)
+    - [matterport_ground_truth.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/matterport/matterport_ground_truth.zip)
+    - [splits.zip](https://storage.googleapis.com/niantic-lon-static/research/footprints/data/matterport/splits.zip)
+
 After this your `paths.yaml` should look like:
 
 ```

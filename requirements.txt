@@ -4,7 +4,7 @@ tensorboardX==1.5
 moviepy==0.2.3.5
 requests==2.22.0
 pyyaml==5.4
-onnx==1.6.0
+onnx==1.13.0
 flake8==3.7.9
 tqdm==4.41.1
 matplotlib==3.1.2
